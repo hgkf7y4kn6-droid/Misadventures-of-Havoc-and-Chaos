@@ -237,7 +237,7 @@ class HiddenVariable(BaseModel):
     fact: str
     hint: str  # what a player learns on discovery
     trigger_keywords: list[str]
-    final_bonus: int = 3
+    final_bonus: int = 2
     discovered_by: list[str] = Field(default_factory=list)
     visibility: Visibility = Visibility.ENDGAME_REVEAL
 

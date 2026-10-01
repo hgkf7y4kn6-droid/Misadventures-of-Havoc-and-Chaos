@@ -146,12 +146,15 @@ def make_objective(theme: str, seed: int, rounds: int, n_players: int) -> Object
     deadline = rng.pick(seed, DEADLINES.get(p.verb, DEADLINES["default"]), "deadline")
     mac = f"the {rng.pick(seed, MACGUFFIN_ADJ, 'macadj')} {rng.pick(seed, MACGUFFIN_NOUN, 'macnoun')}"
     antagonist = rng.pick(seed, ANTAGONISTS, "antagonist")
+    has_deadline = bool(re.search(r"\b(before|by|until|within)\b", p.goal, re.I))
     goal = p.goal[0].upper() + p.goal[1:]
-    title = title_case(f"{p.goal} {deadline}")
+    if has_deadline:
+        deadline = ""
+    title = title_case(f"{p.goal} {deadline}".strip())
     target = max(3, rounds - 1 + n_players // 4)
     return Objective(
         title=title,
-        description=(f"{goal} {deadline} — while also recovering {mac}, which everyone agrees is "
+        description=(f"{(goal + ' ' + deadline).strip()} — while also recovering {mac}, which everyone agrees is "
                      f"'important' for reasons nobody can fully explain. Standing in the way: {antagonist}."),
         tagline=f"{title_case(p.subject)}. One plan. Zero competence.",
         success_conditions=[
@@ -275,7 +278,7 @@ def make_hidden_variables(seed: int, objective: Objective, count: int = 2) -> li
     out = []
     for fact, hint, kws in picks:
         fmt = {"A": objective.antagonist, "M": objective.macguffin}
-        out.append(HiddenVariable(fact=fact.format(**fmt), hint=hint.format(**fmt), trigger_keywords=kws, final_bonus=3))
+        out.append(HiddenVariable(fact=fact.format(**fmt), hint=hint.format(**fmt), trigger_keywords=kws, final_bonus=2))
     return out
 
 

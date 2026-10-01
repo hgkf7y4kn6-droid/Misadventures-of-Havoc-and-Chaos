@@ -219,7 +219,7 @@ def tier_for(roll: int, margin: int, risk: Risk, seed: int, key: str) -> Outcome
     if roll == 1:
         return OutcomeTier.FAILURE
     if margin >= 0:
-        if risk == Risk.WILD and rng.chance(seed, 0.35, "catastrophic", key):
+        if risk == Risk.WILD and rng.chance(seed, 0.25, "catastrophic", key):
             return OutcomeTier.CATASTROPHIC_SUCCESS
         if roll <= 6:
             return OutcomeTier.UNEXPECTED_SUCCESS
@@ -553,7 +553,8 @@ def final_score(state: GameState, outcomes: list[ActionOutcome]) -> tuple[int, i
     n = max(1, len(state.active_players()))
     target_progress = max(1, state.objective.progress_target if state.objective else 4)
     contributions = sum(o.contribution for o in outcomes)
-    hidden = sum(hv.final_bonus for hv in state.hidden_variables if hv.discovered_by)
+    hidden = sum(hv.final_bonus for hv in state.hidden_variables
+                 if any(state.players[p].status != PlayerStatus.LEFT for p in hv.discovered_by if p in state.players))
     progress_bonus = round((min(state.objective_progress, target_progress * 1.5) / target_progress - 0.7) * n * 2)
     morale = state.res("morale")
     morale_bonus = 1 if morale >= 7 else (-2 if morale <= 2 else 0)
@@ -562,5 +563,5 @@ def final_score(state: GameState, outcomes: list[ActionOutcome]) -> tuple[int, i
     breakdown = {"contributions": contributions, "hidden truths": hidden, "objective progress": progress_bonus,
                  "morale": morale_bonus, "time": time_penalty, "party down": down}
     score = sum(breakdown.values())
-    target = math.ceil(n * 1.3)
+    target = math.ceil(n * 1.2) + 2
     return score, target, breakdown

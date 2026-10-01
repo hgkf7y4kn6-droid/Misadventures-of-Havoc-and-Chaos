@@ -1054,12 +1054,12 @@ class GameManager:
         s = self.state
         score, target, breakdown = final_score(s, outcomes)
         n = max(1, len(s.active_players()))
-        catastrophic = any(o.result.tier == OutcomeTier.CATASTROPHIC_SUCCESS for o in outcomes)
         unexpected = any(o.result.tier == OutcomeTier.UNEXPECTED_SUCCESS for o in outcomes)
         depleted = sum(1 for t in s.shared_resources.values() if t.value <= 1)
         down = any(p.status == PlayerStatus.INCAPACITATED for p in s.active_players())
         if score >= target:
-            if catastrophic or sum(p.stats.catastrophes for p in s.active_players()) >= 3:
+            n_cat = sum(1 for o in outcomes if o.result.tier == OutcomeTier.CATASTROPHIC_SUCCESS)
+            if n_cat >= max(1, math.ceil(n / 3)) or sum(p.stats.catastrophes for p in s.active_players()) >= n + 3:
                 kind = GameOutcomeKind.SUCCESS_NEW_PROBLEM
             elif unexpected or breakdown["contributions"] < n:
                 kind = GameOutcomeKind.ACCIDENTAL_SUCCESS

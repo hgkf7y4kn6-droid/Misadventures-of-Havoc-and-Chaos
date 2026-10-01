@@ -1,0 +1,27 @@
+# The Misadventures of Havoc and Chaos — full stack (PostgreSQL + Redis + game server).
+#   cp .env.example .env   # add LLM / TTS keys if you want them
+#   docker compose up --build
+#   open http://localhost:8000
+services:
+  app:
+    build: .
+    ports: ["8000:8000"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HAVOC_DATABASE_URL: postgresql+asyncpg://havoc:havoc@db:5432/havoc
+      HAVOC_REDIS_URL: redis://redis:6379/0
+      HAVOC_PUBLIC_BASE_URL: http://localhost:8000
+    volumes: [audio:/data/audio]
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+  db:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: havoc, POSTGRES_PASSWORD: havoc, POSTGRES_DB: havoc }
+    volumes: [pg:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U havoc"], interval: 3s, retries: 20 }
+  redis:
+    image: redis:7-alpine
+volumes: { pg: {}, audio: {} }

@@ -497,7 +497,7 @@ class GameManager:
             s.total_rounds = director.total_rounds(s.settings.adventure_length)
             bundle = await self.llm.objective_generator.generate(s.theme, s.random_seed, s.total_rounds, n)
             obj = bundle.objective
-            obj.progress_target = max(3, math.ceil(0.4 * s.total_rounds * n))
+            obj.progress_target = procgen.progress_target(s.total_rounds, n)
             s.objective = obj
             s.success_conditions = obj.success_conditions
             s.failure_conditions = obj.failure_conditions

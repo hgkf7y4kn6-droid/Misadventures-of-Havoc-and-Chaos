@@ -9,6 +9,7 @@ The content is deliberately specific and silly; generic prose is the enemy.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -141,6 +142,11 @@ ANTAGONISTS = ["a bureaucrat with a clipboard", "an extremely territorial goose"
                "a mime who has seen things", "the Regional Inspector"]
 
 
+def progress_target(rounds: int, n_players: int) -> int:
+    """Objective progress needed before the finale; the engine owns this number."""
+    return max(3, math.ceil(0.4 * rounds * n_players))
+
+
 def make_objective(theme: str, seed: int, rounds: int, n_players: int) -> Objective:
     p = profile_theme(theme)
     deadline = rng.pick(seed, DEADLINES.get(p.verb, DEADLINES["default"]), "deadline")
@@ -151,7 +157,7 @@ def make_objective(theme: str, seed: int, rounds: int, n_players: int) -> Object
     if has_deadline:
         deadline = ""
     title = title_case(f"{p.goal} {deadline}".strip())
-    target = max(3, rounds - 1 + n_players // 4)
+    target = progress_target(rounds, n_players)
     return Objective(
         title=title,
         description=(f"{(goal + ' ' + deadline).strip()} — while also recovering {mac}, which everyone agrees is "

@@ -48,6 +48,19 @@ HAVOC_LLM_PROVIDER=anthropic HAVOC_LLM_API_KEY=sk-ant-... uvicorn app.main:app
 
 The Anthropic provider uses the official SDK with structured outputs (default model `claude-opus-5-5`, server-side refusal fallback enabled). An OpenAI-compatible provider is included for any chat-completions endpoint. See [Configuration](#configuration).
 
+### Cloudflare edge + native apps
+
+The same engine also runs behind a **Cloudflare Worker + one Durable Object per game** (sockets, alarms, auth at the edge), with **Expo** iOS/Android apps built by **EAS**, **Clerk** sign-in (guests still welcome) and **PostHog** analytics. See **[docs/architecture/cloud-native.md](docs/architecture/cloud-native.md)** for the topology, contracts, local runbook, verification status and open decisions.
+
+```
+backend/           Python engine (authoritative rules, LLM/TTS, persistence)
+frontend/          web client (@havoc/web)
+apps/mobile/       Expo app (@havoc/mobile) + eas.json
+workers/edge/      Cloudflare Worker + GameRoom Durable Object (@havoc/edge)
+packages/protocol/ wire contract shared by every client and the edge
+packages/client/   identity → seat → ticket → reconnecting socket (web + React Native)
+```
+
 ---
 
 ## How a game plays
@@ -247,6 +260,11 @@ All settings are environment variables prefixed `HAVOC_` (see `.env.example`).
 | `HAVOC_MIN_PLAYERS` / `HAVOC_MAX_PLAYERS_LIMIT` / `HAVOC_DEFAULT_MAX_PLAYERS` | 2 / 12 / 8 | |
 | `HAVOC_DECISION_SECONDS` etc. | | phase timers (hosts can change per lobby) |
 | `HAVOC_STORY_WORDS_SHORT/MEDIUM/LONG` | `[1000,2000]` … | final story length targets |
+| `HAVOC_SESSION_SECRET` | random per process | signs guest sessions + socket tickets (pin in production) |
+| `HAVOC_CLERK_JWT_KEY` / `HAVOC_CLERK_JWKS_URL` | unset | enables Clerk sign-in (PEM key or JWKS) |
+| `HAVOC_CLERK_ISSUER` / `HAVOC_CLERK_AUTHORIZED_PARTIES` | unset | extra Clerk claim checks |
+| `HAVOC_POSTHOG_API_KEY` / `HAVOC_POSTHOG_HOST` | unset | server-side PostHog events |
+| `HAVOC_EDGE_SECRET` / `HAVOC_EDGE_URL` | unset | edge mode: the engine serves only the signed internal API for the Cloudflare edge |
 
 **Scaling note:** each game is owned by one server process (its `GameManager` holds the lock, timers and in-memory state; snapshots go to the database after every change, and a restarted server rehydrates games and re-arms timers). Redis provides cross-instance WebSocket fan-out; for multiple instances, route each game code to one instance (e.g. consistent hashing on `/ws/{code}` and `/api/games/{code}`).
 
@@ -255,8 +273,11 @@ All settings are environment variables prefixed `HAVOC_` (see `.env.example`).
 ## Development
 
 ```bash
-cd backend && pytest            # 36 tests: engine, isolation, LLM validation, mechanics, TTS, full game over WebSockets
-cd frontend && npm run build    # typecheck + production build
+cd backend && pytest            # 48 tests: engine, isolation, LLM validation, mechanics, TTS, identity,
+                                #   the Durable Object contract, analytics privacy, protocol parity
+npm install                     # repo root: npm workspaces
+npm run typecheck               # web, mobile, edge
+npm run build:web
 ```
 
 ```

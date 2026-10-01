@@ -14,7 +14,7 @@ def settings():
 async def make_game(settings, n=4, length="short", seed=1234):
     llm = LLMService(None, settings)
     pub = NullPublisher()
-    mgr, host = GameManager.new("Alex", llm, settings, pub, NullStore(), {"auto_advance": False, "adventure_length": length})
+    mgr, host = GameManager.new("Alex", llm, settings, pub, NullStore(), {"auto_advance": False, "adventure_length": length, "max_players": 12})
     mgr.state.random_seed = seed
     players = [host]
     for name in ["Sam", "Jordan", "Riley", "Casey", "Morgan", "Quinn", "Avery", "Drew", "Parker", "Reese", "Skyler"][: n - 1]:
@@ -46,7 +46,7 @@ async def play_through(mgr, players, freeform_every=3):
             await mgr.handle(p.id, ev.SaveCharacter(action="save_character", name=p.name, archetype="Extremely Confident Accountant",
                                                     special_ability="Can calculate probabilities instantly",
                                                     weakness="Cannot resist correcting people",
-                                                    secret_motivation="Believes every problem can be solved with spreadsheets",
+                                                    secret_motivation=f"Believes every problem can be solved with spreadsheets, says {p.name}",
                                                     starting_item="Calculator", humorous_trait="hums constantly"))
     await mgr.close_phase(host)  # remaining characters get auto-generated
     step = 0

@@ -198,7 +198,8 @@ class GameManager:
     async def _commit(self) -> None:
         self.state.version += 1
         try:
-            await self.store.save(self.state)
+            # shielded: a client disconnecting mid-write must not cancel a DB transaction
+            await asyncio.shield(self.store.save(self.state))
         except Exception:  # noqa: BLE001 - persistence trouble must not freeze a live table
             log.exception("failed to persist game %s", self.state.code)
 
@@ -410,6 +411,8 @@ class GameManager:
     async def close_phase(self, p: Player, msg: Any = None) -> None:
         """Host override: close the current phase now (helps when someone wandered off)."""
         self._require_host(p)
+        async with self.lock:
+            pass  # let any in-flight resolution finish so we act on settled state
         await self.on_timeout(self.state.phase.value)
 
     async def _maybe_advance(self) -> None:
@@ -502,7 +505,7 @@ class GameManager:
             for key, lbl in bundle.resource_labels.items():
                 if key in s.shared_resources and lbl:
                     s.shared_resources[key].label = lbl
-            s.locations = {l.id: l for l in bundle.locations}
+            s.locations = {loc.id: loc for loc in bundle.locations}
             s.npcs = {npc.id: npc for npc in bundle.npcs}
             s.hidden_variables = bundle.hidden_variables
             s.world_state = {"scars": [], "world_rules": obj.world_rules}
@@ -908,7 +911,7 @@ class GameManager:
             reqs = [self._narration_request(o) for o in g_out]
             texts = await self.llm.consequence_resolver.narrate(
                 ", ".join(s.players[p].display for p in g.player_ids), authorized_context(s, g.player_ids), reqs)
-            for o, t in zip(g_out, texts):
+            for o, t in zip(g_out, texts, strict=False):
                 narr[o.planned.key] = t
 
         # Chronicle + story entries + private information
@@ -1156,7 +1159,7 @@ class GameManager:
             s.audio_status = {"state": "pending", "chapters": len(story.chapters), "ready": []}
             await self._commit()
             try:
-                await self.store.archive(s)
+                await asyncio.shield(self.store.archive(s))
             except Exception:  # noqa: BLE001
                 log.exception("failed to archive adventure %s", s.code)
         await self.emit(E.FINAL_STORY_GENERATED, {"title": story.title, "chapters": len(story.chapters), "words": story.word_count})

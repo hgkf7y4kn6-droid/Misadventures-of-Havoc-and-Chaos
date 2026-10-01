@@ -71,7 +71,7 @@ def lexical_similarity(a: str, b: str) -> float:
 
 
 def cosine(u: list[float], v: list[float]) -> float:
-    dot = sum(x * y for x, y in zip(u, v))
+    dot = sum(x * y for x, y in zip(u, v, strict=False))
     nu = math.sqrt(sum(x * x for x in u))
     nv = math.sqrt(sum(y * y for y in v))
     return dot / (nu * nv) if nu and nv else 0.0

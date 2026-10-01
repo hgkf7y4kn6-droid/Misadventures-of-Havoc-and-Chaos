@@ -25,7 +25,7 @@ from ..models.game import (
     Visibility,
 )
 from . import rng
-from .procgen import keywords, lower_first, third_person
+from .procgen import keywords, lower_first
 
 # ---------------------------------------------------------------------------
 # Recording
@@ -101,13 +101,11 @@ def map_relationships(events: list[AdventureEvent]) -> list[Intersection]:
             cause = by_id.get(rid)
             if not cause or set(cause.player_ids) == set(ev.player_ids) or (cause.event_id, ev.event_id) in seen:
                 continue
-            cause_names = set(cause.player_ids)
-            desc = next((l for l in links if l not in seen_text), "")
+            desc = next((link for link in links if link not in seen_text), "")
             seen.add((cause.event_id, ev.event_id))
             if desc:
                 seen_text.add(desc)
             out.append(Intersection(cause=cause, effect=ev, description=desc))
-            del cause_names
     return out
 
 

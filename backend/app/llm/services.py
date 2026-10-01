@@ -165,7 +165,7 @@ class ThemeMerger(BaseService):
             key = tuple(sorted((lookup[a], lookup[b])))
             return key in same
 
-        cleaned = [s.model_copy(update={"text": t}) for s, t in zip(subs, texts)]
+        cleaned = [s.model_copy(update={"text": t}) for s, t in zip(subs, texts, strict=True)]
         options = themes.build_options(cleaned, embeddings=embeddings, judge=judge)
 
         if self.provider is not None and any(len(o.originals) > 1 for o in options):
@@ -180,7 +180,7 @@ class ThemeMerger(BaseService):
                 600,
             )
             if titles and len(titles.titles) == len(options):
-                for o, t in zip(options, titles.titles):
+                for o, t in zip(options, titles.titles, strict=True):
                     if len(o.originals) > 1 and t.strip():
                         o.title = clean_text(t, 120)
         return options
@@ -239,8 +239,8 @@ class ObjectiveGenerator(BaseService):
             approximate_rounds=rounds,
         )
         locations = [
-            Location(name=clean_text(l.name, 60), description=clean_text(l.description, 200), tags=[t.lower() for t in l.tags[:4]])
-            for l in result.locations[:7]
+            Location(name=clean_text(loc.name, 60), description=clean_text(loc.description, 200), tags=[t.lower() for t in loc.tags[:4]])
+            for loc in result.locations[:7]
         ] or procgen.make_locations(theme, seed)
         npcs = [
             NPC(

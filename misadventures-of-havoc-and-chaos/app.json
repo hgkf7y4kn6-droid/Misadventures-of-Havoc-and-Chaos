@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "misdventures-of-havoc-and-chaos",
-    "slug": "misdventures-of-havoc-and-chaos",
+    "name": "misadventures-of-havoc-and-chaos",
+    "slug": "misadventures-of-havoc-and-chaos",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "misdventuresofhavocandchaos",
+    "scheme": "misadventuresofhavocandchaos",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"

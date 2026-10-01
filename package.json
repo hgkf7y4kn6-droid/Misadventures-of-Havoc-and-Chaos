@@ -1,0 +1,13 @@
+{
+  "name": "havoc-and-chaos",
+  "private": true,
+  "description": "The Misadventures of Havoc and Chaos — monorepo (web, mobile, edge, shared packages). The game engine lives in backend/ (Python).",
+  "workspaces": ["packages/*", "frontend", "workers/*", "apps/*"],
+  "scripts": {
+    "web": "npm run dev -w frontend",
+    "edge": "npm run dev -w workers/edge",
+    "mobile": "npm run start -w apps/mobile",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "build:web": "npm run build -w frontend"
+  }
+}

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { api, type SharedStory as Shared } from "../lib/api";
+import { client, type SharedStory as Shared } from "../lib/api";
 import { Logo, OUTCOME_STYLE, Panel } from "./common";
 
 export function SharedStory({ shareId }: { shareId: string }) {
   const [story, setStory] = useState<Shared | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    api.shared(shareId).then((s) => { setStory(s); document.title = s.title; }).catch((e) => setError((e as Error).message));
+    client.shared(shareId).then((s) => { setStory(s); document.title = s.title; }).catch((e) => setError((e as Error).message));
   }, [shareId]);
   if (error) return <main className="p-10 text-center"><Logo /><p className="mt-6 text-chaos text-xl">{error}</p></main>;
   if (!story) return <main className="p-10 text-center"><Logo /><p className="mt-6">Unrolling the scroll…</p></main>;

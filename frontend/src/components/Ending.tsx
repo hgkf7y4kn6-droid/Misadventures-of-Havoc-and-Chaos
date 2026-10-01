@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type Session } from "../lib/api";
+import { client } from "../lib/api";
+import { track } from "../lib/analytics";
 import { useNarrator } from "../lib/narrator";
 import type { Chapter, GameView } from "../lib/types";
 import { Avatar, OUTCOME_STYLE, Panel } from "./common";
@@ -29,7 +30,7 @@ export function StoryGenerating({ view }: { view: GameView }) {
   );
 }
 
-export function Ending({ view, send, session }: { view: GameView; send: Send; session: Session }) {
+export function Ending({ view, send, code }: { view: GameView; send: Send; code: string }) {
   const story = view.final_story;
   const o = view.outcome;
   const isHost = view.me.id === view.host_id;
@@ -55,7 +56,7 @@ export function Ending({ view, send, session }: { view: GameView; send: Send; se
 
       <div className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
         <article className="flex flex-col gap-4 min-w-0" aria-label="The complete adventure">
-          <ReadAloud view={view} send={send} session={session} chapters={story.chapters} title={story.title} />
+          <ReadAloud view={view} send={send} code={code} chapters={story.chapters} title={story.title} />
           <nav className="sticker p-3" aria-label="Chapters">
             <ol className="flex flex-wrap gap-2 text-sm">
               {story.chapters.map((c) => <li key={c.index}><a className="underline decoration-zap hover:text-zap" href={`#chapter-${c.index}`}>{c.title}</a></li>)}
@@ -105,7 +106,7 @@ export function Ending({ view, send, session }: { view: GameView; send: Send; se
           <Panel title="📤 Keep the Legend">
             <div className="flex flex-col gap-2">
               <button className="btn btn-zap" onClick={() => copy(fullText, "story")}>{copied === "story" ? "Copied!" : "Copy the story"}</button>
-              <a className="btn btn-ghost text-center" href={api.storyTxtUrl(session.code, session.token)} download>Download as text</a>
+              <button className="btn btn-ghost" onClick={async () => { track("story_downloaded", {}); location.assign(await client.storyTxtUrl(code)); }}>Download as text</button>
               {shareUrl ? (
                 <button className="btn btn-chaos" onClick={() => copy(shareUrl, "link")}>{copied === "link" ? "Link copied!" : "Copy read-only share link"}</button>
               ) : <p className="text-sm text-violet-300">The host disabled public share links.</p>}
@@ -118,7 +119,7 @@ export function Ending({ view, send, session }: { view: GameView; send: Send; se
   );
 }
 
-function ReadAloud({ view, send, session, chapters, title }: { view: GameView; send: Send; session: Session; chapters: Chapter[]; title: string }) {
+function ReadAloud({ view, send, code, chapters, title }: { view: GameView; send: Send; code: string; chapters: Chapter[]; title: string }) {
   const server = view.audio_status?.provider && view.audio_status.provider !== "browser" && view.audio_status.state !== "client";
   // Local preferences apply instantly (even offline); the server copy follows this player across devices.
   const [prefs, setPrefs] = useState<LocalPrefs>(() => ({ ...view.me.preferences, ...loadLocalPrefs() }));
@@ -131,7 +132,7 @@ function ReadAloud({ view, send, session, chapters, title }: { view: GameView; s
     send({ action: "set_preferences", ...patch });
   }, [send]);
 
-  const audioUrl = useCallback((i: number) => api.audioUrl(session.code, session.token, i, prefs.preferred_voice), [session, prefs.preferred_voice]);
+  const audioUrl = useCallback((i: number) => client.audioUrl(code, i, prefs.preferred_voice), [code, prefs.preferred_voice]);
   const opts = useMemo(() => ({
     mode: (server ? "server" : "browser") as "server" | "browser", chapters, title, audioUrl,
     voiceStyle: prefs.preferred_voice, volume: prefs.narration_volume,
@@ -146,7 +147,7 @@ function ReadAloud({ view, send, session, chapters, title }: { view: GameView; s
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="font-display text-3xl text-zap">THE COMPLETE ADVENTURE</h3>
         <button className={`btn ${prefs.audio_enabled ? "btn-slime bg-slime text-black" : "btn-ghost"}`} aria-pressed={prefs.audio_enabled}
-          onClick={() => savePrefs({ audio_enabled: !prefs.audio_enabled })}>
+          onClick={() => { track("narration_toggled", { enabled: !prefs.audio_enabled }); savePrefs({ audio_enabled: !prefs.audio_enabled }); }}>
           {prefs.audio_enabled ? "🔊 Audio On" : "🔇 Audio Off"}
         </button>
       </div>
@@ -159,7 +160,7 @@ function ReadAloud({ view, send, session, chapters, title }: { view: GameView; s
             ) : state.status === "playing" || state.status === "loading" ? (
               <button className="btn btn-zap" onClick={() => narrator.pause()}>Pause ⏸</button>
             ) : (
-              <button className="btn btn-havoc" onClick={() => narrator.play(state.status === "idle" && state.chapterProgress >= 1 ? 0 : state.chapter)}>Play Story ▶</button>
+              <button className="btn btn-havoc" onClick={() => { track("narration_played", { mode: server ? "server" : "browser", voice: prefs.preferred_voice }); narrator.play(state.status === "idle" && state.chapterProgress >= 1 ? 0 : state.chapter); }}>Play Story ▶</button>
             )}
             <button className="btn btn-ghost" onClick={() => narrator.stop()} disabled={state.status === "idle"}>Stop ■</button>
             <button className="btn btn-ghost" onClick={() => narrator.restart()}>Restart ⟲</button>

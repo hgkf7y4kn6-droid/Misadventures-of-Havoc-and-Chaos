@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Session } from "./api";
+import { GameSocket, type ClientMessage, type SocketStatus } from "@havoc/client";
+import { client } from "./api";
+import { identify } from "./analytics";
 import type { Character, GameEvent, GameView } from "./types";
 
-export type ConnState = "connecting" | "open" | "closed" | "kicked" | "invalid";
+export type ConnState = SocketStatus;
 
 export interface Toast { id: number; text: string; tone: "info" | "error" | "secret" }
 
@@ -15,15 +17,13 @@ const EVENT_TOASTS: Record<string, (d: Record<string, unknown>) => string | null
   FINAL_STORY_GENERATED: () => "📖 The complete story is ready.",
 };
 
-export function useGame(session: Session | null) {
+export function useGame(code: string | null) {
   const [view, setView] = useState<GameView | null>(null);
   const [conn, setConn] = useState<ConnState>("connecting");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [events, setEvents] = useState<GameEvent[]>([]);
   const [suggestion, setSuggestion] = useState<Character | null>(null);
-  const ws = useRef<WebSocket | null>(null);
-  const retry = useRef(0);
-  const alive = useRef(true);
+  const socket = useRef<GameSocket | null>(null);
 
   const toast = useCallback((text: string, tone: Toast["tone"] = "info") => {
     const id = Date.now() + Math.random();
@@ -32,55 +32,32 @@ export function useGame(session: Session | null) {
   }, []);
 
   useEffect(() => {
-    if (!session) return;
-    alive.current = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-
-    const connect = () => {
-      setConn("connecting");
-      const proto = location.protocol === "https:" ? "wss" : "ws";
-      const sock = new WebSocket(`${proto}://${location.host}/ws/${session.code}?token=${encodeURIComponent(session.token)}`);
-      ws.current = sock;
-      sock.onopen = () => { setConn("open"); retry.current = 0; };
-      sock.onmessage = (e) => {
-        let msg: { type: string; [k: string]: unknown };
-        try { msg = JSON.parse(e.data); } catch { return; }
-        if (msg.type === "state") setView(msg.state as GameView);
-        else if (msg.type === "event") {
-          const ev = msg as unknown as GameEvent & { type: string };
-          setEvents((list) => [...list.slice(-50), ev]);
-          const t = EVENT_TOASTS[ev.event]?.(ev.data ?? {});
-          if (t) toast(t, ev.event === "PRIVATE_INFORMATION" ? "secret" : "info");
+    if (!code) return;
+    const sock = new GameSocket(client, code, {
+      onStatus: setConn,
+      onMessage: (msg) => {
+        if (msg.type === "state") {
+          setView(msg.state);
+          identify(msg.state.me.id, { game_id: msg.state.game_id });
+        } else if (msg.type === "event") {
+          setEvents((list) => [...list.slice(-50), msg]);
+          const t = EVENT_TOASTS[msg.event]?.(msg.data ?? {});
+          if (t) toast(t, msg.event === "PRIVATE_INFORMATION" ? "secret" : "info");
         } else if (msg.type === "error") {
-          if (msg.fatal) { setConn("invalid"); alive.current = false; }
-          toast(String(msg.message ?? "Something went wrong"), "error");
-        } else if (msg.type === "kicked") { setConn("kicked"); alive.current = false; }
-        else if (msg.type === "character_suggestion") setSuggestion(msg.character as Character);
-      };
-      sock.onclose = (e) => {
-        if (e.code === 4003) setConn("kicked");
-        if (!alive.current || e.code === 4003 || e.code === 4004) { if (e.code === 4004) setConn("invalid"); return; }
-        setConn("closed");
-        const delay = Math.min(10000, 500 * 2 ** retry.current++);
-        timer = setTimeout(connect, delay);
-      };
-    };
-    connect();
-    return () => {
-      alive.current = false;
-      if (timer) clearTimeout(timer);
-      ws.current?.close();
-    };
-  }, [session, toast]);
+          toast(msg.message ?? "Something went wrong", "error");
+        } else if (msg.type === "character_suggestion") {
+          setSuggestion(msg.character);
+        }
+      },
+    }).start();
+    socket.current = sock;
+    return () => sock.stop();
+  }, [code, toast]);
 
   const send = useCallback((msg: Record<string, unknown>) => {
-    const sock = ws.current;
-    if (!sock || sock.readyState !== WebSocket.OPEN) {
-      toast("Reconnecting… try again in a second.", "error");
-      return false;
-    }
-    sock.send(JSON.stringify(msg));
-    return true;
+    const ok = socket.current?.send(msg as ClientMessage) ?? false;
+    if (!ok) toast("Reconnecting… try again in a second.", "error");
+    return ok;
   }, [toast]);
 
   return { view, conn, send, toasts, events, toast, suggestion, clearSuggestion: () => setSuggestion(null) };

@@ -23,7 +23,8 @@ export interface NarratorOptions {
   mode: "server" | "browser";
   chapters: Chapter[];
   title: string;
-  audioUrl: (chapter: number) => string;
+  /** Resolves a playable URL (it may need a fresh short-lived ticket). */
+  audioUrl: (chapter: number) => Promise<string>;
   voiceStyle: string;
   volume: number;
 }
@@ -86,7 +87,7 @@ class Narrator {
     this.stopInternal();
     const t = ++this.token;
     this.set({ chapter, chapterProgress: 0, status: "loading", error: undefined });
-    if (this.opts.mode === "server") this.playServer(chapter, t);
+    if (this.opts.mode === "server") void this.playServer(chapter, t);
     else this.playBrowser(chapter, t);
   }
 
@@ -139,8 +140,14 @@ class Narrator {
     this.play(nextChapter);
   }
 
-  private playServer(chapter: number, t: number) {
-    const audio = new Audio(this.opts.audioUrl(chapter));
+  private async playServer(chapter: number, t: number) {
+    let url: string;
+    try { url = await this.opts.audioUrl(chapter); } catch {
+      if (t === this.token) this.set({ status: "error", error: "Couldn't reach the narrator. You can keep reading!" });
+      return;
+    }
+    if (t !== this.token) return;
+    const audio = new Audio(url);
     audio.preload = "auto";
     audio.volume = this.opts.volume;
     this.audio = audio;
@@ -154,7 +161,7 @@ class Narrator {
       this.set({ status: "error", error: "Narration for this chapter isn't available. You can keep reading!" });
     };
     // Warm the cache for the next chapter while this one plays.
-    if (chapter + 1 < this.opts.chapters.length) fetch(this.opts.audioUrl(chapter + 1), { method: "GET" }).catch(() => {});
+    if (chapter + 1 < this.opts.chapters.length) void this.opts.audioUrl(chapter + 1).then((u) => fetch(u)).catch(() => {});
     audio.play().catch(() => t === this.token && this.set({ status: "error", error: "Tap play to start narration." }));
   }
 

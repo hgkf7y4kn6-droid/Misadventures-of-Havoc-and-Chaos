@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { sessions, type Session } from "../lib/api";
+import { client } from "../lib/api";
 import { useGame } from "../lib/useGame";
 import { Adventure } from "./Adventure";
 import { Logo, Toasts } from "./common";
@@ -13,15 +13,15 @@ const PHASE_LABEL: Record<string, string> = {
   story_generation: "Writing the Legend", ended: "The End",
 };
 
-export function Game({ session }: { session: Session }) {
-  const { view, conn, send, toasts, suggestion, clearSuggestion } = useGame(session);
+export function Game({ code }: { code: string }) {
+  const { view, conn, send, toasts, suggestion, clearSuggestion } = useGame(code);
 
   useEffect(() => {
     if (view) document.title = `${PHASE_LABEL[view.phase] ?? ""} · The Misadventures of Havoc and Chaos`;
   }, [view?.phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (conn === "kicked" || conn === "invalid") {
-    sessions.remove(session.code);
+    void client.forgetSeat(code);
     return (
       <main className="p-10 text-center flex flex-col gap-4 items-center">
         <Logo />
@@ -51,7 +51,7 @@ export function Game({ session }: { session: Session }) {
             {view.phase === "character_creation" && <CharacterCreation view={view} send={send} suggestion={suggestion} clearSuggestion={clearSuggestion} />}
             {(view.phase === "adventure" || view.phase === "final_challenge") && <Adventure view={view} send={send} />}
             {view.phase === "story_generation" && <StoryGenerating view={view} />}
-            {view.phase === "ended" && <Ending view={view} send={send} session={session} />}
+            {view.phase === "ended" && <Ending view={view} send={send} code={code} />}
           </>
         )}
       </main>

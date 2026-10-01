@@ -1,0 +1,22 @@
+{
+  "name": "@havoc/edge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare edge for The Misadventures of Havoc and Chaos: Worker (auth, routing, static web) + GameRoom Durable Object (sockets, alarms).",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types"
+  },
+  "dependencies": {
+    "@clerk/backend": "^3.21.1",
+    "@havoc/protocol": "*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261001.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.146.0"
+  }
+}

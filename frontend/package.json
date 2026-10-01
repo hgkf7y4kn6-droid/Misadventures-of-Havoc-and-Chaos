@@ -1,5 +1,5 @@
 {
-  "name": "havoc-and-chaos-web",
+  "name": "@havoc/web",
   "private": true,
   "version": "1.0.0",
   "description": "The Misadventures of Havoc and Chaos — web client",
@@ -11,6 +11,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@clerk/react": "^6.17.4",
+    "@havoc/client": "*",
+    "@havoc/protocol": "*",
+    "posthog-js": "^1.435.6",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

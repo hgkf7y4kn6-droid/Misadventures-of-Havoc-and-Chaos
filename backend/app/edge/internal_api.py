@@ -168,3 +168,11 @@ async def audio(code: str, player_id: str, chapter: int, request: Request, voice
     if not p:
         raise HTTPException(404, "no such player")
     return await audio_response(reg(request), mgr, p, chapter, voice, max(0.5, min(2.0, speed)))
+
+
+@router.get("/games/{code}/players/{player_id}/state")
+async def player_state(code: str, player_id: str, request: Request) -> dict[str, Any]:
+    mgr = await manager(request, code)
+    if player_id not in mgr.state.players:
+        raise HTTPException(404, "no such player")
+    return project(mgr.state, player_id)

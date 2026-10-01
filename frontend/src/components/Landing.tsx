@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, sessions } from "../lib/api";
+import { client } from "../lib/api";
+import { track } from "../lib/analytics";
+import { AccountButton } from "../lib/auth";
 import { Logo } from "./common";
 
 export function Landing({ initialCode = "" }: { initialCode?: string }) {
@@ -18,8 +20,8 @@ export function Landing({ initialCode = "" }: { initialCode?: string }) {
     if (!name.trim()) return setError("Every legend needs a name. Even a bad one.");
     setBusy(true); setError(null); remember();
     try {
-      const s = await api.create(name.trim(), { adventure_length: length });
-      sessions.set(s);
+      const s = await client.createGame(name.trim(), { adventure_length: length });
+      track("game_create_clicked", { adventure_length: length });
       location.assign(`/g/${s.code}`);
     } catch (e) { setError((e as Error).message); setBusy(false); }
   }
@@ -29,10 +31,9 @@ export function Landing({ initialCode = "" }: { initialCode?: string }) {
     if (!name.trim() || c.length < 4) return setError("Need a name and a game code.");
     setBusy(true); setError(null); remember();
     try {
-      const existing = sessions.get(c);
-      if (existing) return location.assign(`/g/${c}`);
-      const s = await api.join(c, name.trim());
-      sessions.set(s);
+      // Joining again with the same identity returns the same seat (rejoin from any device).
+      const s = await client.joinGame(c, name.trim());
+      track("game_join_clicked", {});
       location.assign(`/g/${s.code}`);
     } catch (e) { setError((e as Error).message); setBusy(false); }
   }
@@ -77,7 +78,8 @@ export function Landing({ initialCode = "" }: { initialCode?: string }) {
           </button>
         </form>
       </div>
-      <p className="text-sm text-violet-300">2–12 players · works on phones · narrated by an AI with poor judgment</p>
+      <div className="flex items-center gap-3"><AccountButton /></div>
+      <p className="text-sm text-violet-300">2–12 players · no account needed · narrated by an AI with poor judgment</p>
     </main>
   );
 }

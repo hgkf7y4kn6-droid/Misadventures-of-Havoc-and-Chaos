@@ -1,0 +1,49 @@
+# The Misadventures of Havoc and Chaos — Cloudflare edge
+name = "havoc-edge"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The web client is served from the same origin (no CORS, one domain for API + sockets + app).
+[assets]
+directory = "../../frontend/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*", "/ws/*", "/internal/*", "/ingest/*"]
+
+# One GameRoom per game code: sockets (hibernating), the phase alarm, and fan-out.
+[[durable_objects.bindings]]
+name = "GAME_ROOM"
+class_name = "GameRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom"]
+
+[vars]
+# Local dev: the Python engine started with HAVOC_EDGE_URL=http://localhost:8787.
+# Production: point at your engine origin, or bind a Cloudflare Container / service as ENGINE.
+ENGINE_URL = "http://localhost:8000"
+CLERK_AUTHORIZED_PARTIES = "http://localhost:8787,http://localhost:5173,http://localhost:8081"
+CORS_ORIGINS = "http://localhost:5173,http://localhost:8081"
+POSTHOG_HOST = "https://us.i.posthog.com"
+POSTHOG_ASSETS_HOST = "https://us-assets.i.posthog.com"
+WS_MESSAGES_PER_10S = "40"
+
+# Secrets (wrangler secret put …, or .dev.vars locally):
+#   EDGE_SECRET       shared with the engine (HAVOC_EDGE_SECRET)
+#   SESSION_SECRET    signs guest sessions + socket tickets
+#   CLERK_JWT_KEY     Clerk PEM public key (networkless verification)  — or CLERK_SECRET_KEY
+
+[env.production]
+name = "havoc-edge-production"
+[env.production.vars]
+ENGINE_URL = "https://engine.example.com"
+CLERK_AUTHORIZED_PARTIES = "https://play.example.com"
+CORS_ORIGINS = ""
+POSTHOG_HOST = "https://us.i.posthog.com"
+POSTHOG_ASSETS_HOST = "https://us-assets.i.posthog.com"
+WS_MESSAGES_PER_10S = "40"
+[[env.production.durable_objects.bindings]]
+name = "GAME_ROOM"
+class_name = "GameRoom"

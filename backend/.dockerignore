@@ -1,0 +1,6 @@
+__pycache__
+.pytest_cache
+tests
+*.db
+audio_cache
+.env

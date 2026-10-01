@@ -159,6 +159,7 @@ class GameManager:
         if not p:
             return
         p.connected = connected
+        await self._commit()  # presence must survive an engine restart (edge mode rehydrates it)
         if not connected:
             await self.emit(E.PLAYER_LEFT, {"player_id": player_id, "temporary": True})
         await self.sync()

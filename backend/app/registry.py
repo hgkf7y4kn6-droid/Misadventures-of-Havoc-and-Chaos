@@ -67,8 +67,11 @@ class GameRegistry:
             return mgr
 
     def _rehydrate(self, state: GameState) -> GameManager:
-        for p in state.players.values():
-            p.connected = False
+        if not self.settings.edge_url:
+            # Standalone: sockets died with the old process. At the edge the GameRoom DO still holds them
+            # (and reports disconnects), so presence survives an engine restart or container sleep.
+            for p in state.players.values():
+                p.connected = False
         state.world_state["resolving"] = False
         mgr = self._manager(state)
         mgr.rearm()

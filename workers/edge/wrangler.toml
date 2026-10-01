@@ -23,6 +23,7 @@ new_sqlite_classes = ["GameRoom"]
 [vars]
 # Local dev: the Python engine started with HAVOC_EDGE_URL=http://localhost:8787.
 # Production: point at your engine origin, or bind a Cloudflare Container / service as ENGINE.
+ENGINE_MODE = "url"
 ENGINE_URL = "http://localhost:8000"
 CLERK_AUTHORIZED_PARTIES = "http://localhost:8787,http://localhost:5173,http://localhost:8081"
 CORS_ORIGINS = "http://localhost:5173,http://localhost:8081"
@@ -35,15 +36,50 @@ WS_MESSAGES_PER_10S = "40"
 #   SESSION_SECRET    signs guest sessions + socket tickets
 #   CLERK_JWT_KEY     Clerk PEM public key (networkless verification)  — or CLERK_SECRET_KEY
 
+# ---------------------------------------------------------------------------------------------
+# Production: the Python engine runs on Cloudflare Containers (backend/Dockerfile), sharded by
+# game code. Deploy with `npm run deploy:production` (needs Docker + a Cloudflare API token),
+# or via .github/workflows/deploy.yml.
+#
+# Secrets (wrangler secret put <NAME> --env production):
+#   EDGE_SECRET, SESSION_SECRET, DATABASE_URL (Postgres; required — container disks are ephemeral),
+#   CLERK_JWT_KEY (or CLERK_SECRET_KEY), LLM_API_KEY, TTS_API_KEY, POSTHOG_API_KEY
 [env.production]
 name = "havoc-edge-production"
+
 [env.production.vars]
-ENGINE_URL = "https://engine.example.com"
-CLERK_AUTHORIZED_PARTIES = "https://play.example.com"
+ENGINE_MODE = "container"
+ENGINE_SHARDS = "4"          # change only when no games are live (codes would re-hash)
+ENGINE_URL = ""
+PUBLIC_URL = "https://havoc-edge-production.REPLACE-ME.workers.dev"
+CLERK_AUTHORIZED_PARTIES = "https://havoc-edge-production.REPLACE-ME.workers.dev"
 CORS_ORIGINS = ""
+LLM_PROVIDER = "anthropic"
+LLM_MODEL = "claude-opus-5-5"
+TTS_PROVIDER = "browser"
 POSTHOG_HOST = "https://us.i.posthog.com"
 POSTHOG_ASSETS_HOST = "https://us-assets.i.posthog.com"
 WS_MESSAGES_PER_10S = "40"
+
+[[env.production.containers]]
+class_name = "EngineContainer"
+image = "../../backend/Dockerfile"
+image_build_context = "../../backend"
+instance_type = "basic"
+max_instances = 4            # >= ENGINE_SHARDS
+
 [[env.production.durable_objects.bindings]]
 name = "GAME_ROOM"
 class_name = "GameRoom"
+
+[[env.production.durable_objects.bindings]]
+name = "ENGINE_CONTAINER"
+class_name = "EngineContainer"
+
+[[env.production.migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom"]
+
+[[env.production.migrations]]
+tag = "v2"
+new_sqlite_classes = ["EngineContainer"]

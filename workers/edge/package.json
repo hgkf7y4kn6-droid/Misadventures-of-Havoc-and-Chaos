@@ -8,10 +8,12 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "types": "wrangler types"
+    "types": "wrangler types",
+    "deploy:production": "npm run build -w @havoc/web --prefix ../.. && wrangler deploy --env production"
   },
   "dependencies": {
     "@clerk/backend": "^3.21.1",
+    "@cloudflare/containers": "^0.3.7",
     "@havoc/protocol": "*"
   },
   "devDependencies": {

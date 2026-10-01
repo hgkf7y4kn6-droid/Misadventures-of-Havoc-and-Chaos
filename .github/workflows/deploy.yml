@@ -1,0 +1,54 @@
+# The Misadventures of Havoc and Chaos — test, then deploy the edge Worker + the engine on Cloudflare Containers.
+#
+# Repository secrets: CLOUDFLARE_API_TOKEN (Workers Scripts + Containers edit), CLOUDFLARE_ACCOUNT_ID.
+# Worker secrets are set once with `wrangler secret put <NAME> --env production` (see workers/edge/wrangler.toml).
+name: test-and-deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm }
+      - name: Engine tests
+        working-directory: backend
+        run: |
+          pip install -r requirements.txt
+          python -m pytest -q
+      - name: Typecheck web, edge, mobile
+        run: |
+          npm ci
+          npm run typecheck
+      - name: Build the engine image (what Cloudflare Containers will run)
+        run: docker build --platform linux/amd64 -t havoc-engine:ci backend
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22", cache: npm }
+      - run: npm ci
+      - run: npm run build:web
+      - name: Deploy Worker, GameRoom DO, and the engine container
+        working-directory: workers/edge
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --env production

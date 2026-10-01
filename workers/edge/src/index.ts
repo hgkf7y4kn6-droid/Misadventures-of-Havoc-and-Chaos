@@ -23,6 +23,7 @@ import { engine, engineJson } from "./engine";
 import type { Env } from "./env";
 import { verifySignature } from "./signing";
 
+export { EngineContainer } from "./engine-container";
 export { GameRoom } from "./room";
 
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ";

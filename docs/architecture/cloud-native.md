@@ -126,15 +126,44 @@ node scripts/smoke.mjs
 | Expo app | `tsc --noEmit` clean; `expo export` produces iOS and Android Hermes bundles. |
 | Protocol contract | Python ↔ TypeScript event/action parity test. |
 
-**Not verified here:** deploying to a real Cloudflare account, real Clerk and PostHog projects, EAS cloud builds and store submission, running the app on a device or simulator, and `expo-doctor` (the sandbox blocks those networks). The Dockerfile was updated for the workspace layout but not built (no Docker daemon).
+| Engine container image | `backend/Dockerfile` builds for linux/amd64; the built image ran as the engine behind the Worker against PostgreSQL, completing the alarm-only smoke game, and resumed the game after the engine was killed mid-game and kept down past several phase timers. |
+| Production Worker config | `wrangler deploy --env production --dry-run` validates the bundle, both DO bindings, static assets, and the container definition. |
 
-## 8. Decisions still open
+**Not verified here:** deploying to a real Cloudflare account (no credentials, and the sandbox can't reach `api.cloudflare.com`), real Clerk and PostHog projects, EAS cloud builds and store submission, running the app on a device or simulator, and `expo-doctor`.
 
-1. **Where the Python engine runs in production.**
-   - *A (recommended now): engine as a private origin service* — any container host, or Cloudflare Containers, reached through `ENGINE` (service binding) or `ENGINE_URL`. Zero rewrite; the whole tested engine and LLM/TTS stack is reused.
-   - *B (later, optional): port the engine to TypeScript inside the GameRoom DO* — removes the origin hop and makes DO storage the system of record. The deterministic RNG makes this safe to do incrementally: record seeds + inputs from real games and replay them against both engines as a conformance suite.
-2. **Engine scaling.** The engine keeps live games in memory, so with more than one replica each game code must stick to one replica. The DO already knows the code; the planned change is to route to `ENGINE_URL` by consistent hash of the code (or one container per hot shard).
-3. **Postgres provider** (Neon, Supabase, RDS…). If any Worker-side reads are added later (e.g. share pages at the edge), use Hyperdrive.
-4. **Narration storage.** Audio is cached on the engine's disk; for multi-replica or Containers, move the cache to R2 and serve `audio/:n` from the Worker with R2 + Cache API.
-5. **Deep links.** `havoc://game/CODE` works via the `scheme`; universal links / app links for `https://<domain>/g/CODE` need the domain decision plus an `apple-app-site-association` / `assetlinks.json` served by the Worker.
-6. **Clerk instance settings.** Add the native redirect and web origins to `authorized parties`; decide whether guests can upgrade to accounts mid-game (the seat model supports it if the engine re-binds the seat's `user_id`).
+## 8. Engine on Cloudflare Containers (decided: Option A)
+
+The Python engine is kept as-is and runs as a **Cloudflare Container** (`EngineContainer` in `workers/edge/src/engine-container.ts`, image `backend/Dockerfile`). The alternative — porting the engine to TypeScript inside the GameRoom DO — is set aside.
+
+- **Sharding.** Game codes are hashed (FNV-1a) onto `ENGINE_SHARDS` container instances (`engine-0 … engine-N-1`), so every game has exactly one authoritative engine process. Changing `ENGINE_SHARDS` re-hashes codes; do it only when no games are live. `max_instances` must be ≥ `ENGINE_SHARDS`.
+- **Sleep and wake.** Instances sleep after 15 idle minutes. Games are persisted to Postgres on every change (including presence), and phase timers live in GameRoom alarms. So the next request or alarm wakes the instance, which rehydrates the game and continues.
+- **Engine unavailable.** If the engine can't be reached (waking, rolling out, crashed), the GameRoom re-arms its alarm with backoff (1 s → 30 s, indefinitely). Duplicate firings are discarded by the engine's timer tokens. Socket actions get a friendly "waking up, try again" error instead of failing silently.
+- **Configuration.** The Worker passes engine settings into the container as env vars (`engineEnv()`): `EDGE_SECRET`, `PUBLIC_URL` (where the engine posts room ops), `DATABASE_URL` (required, because container disks are ephemeral and the container refuses to start without it), `SESSION_SECRET`, `LLM_*`, `TTS_*`, `POSTHOG_*`.
+- **Local dev stays Docker-free.** `ENGINE_MODE=url` points the Worker at an engine on `localhost:8000`; production sets `ENGINE_MODE=container`.
+
+### Deploying
+
+One-time setup:
+
+```bash
+cd workers/edge
+# fill in [env.production.vars] in wrangler.toml: PUBLIC_URL, CLERK_AUTHORIZED_PARTIES, LLM/TTS providers
+for s in EDGE_SECRET SESSION_SECRET DATABASE_URL CLERK_JWT_KEY LLM_API_KEY POSTHOG_API_KEY; do
+  npx wrangler secret put $s --env production
+done
+```
+
+Then either push to `main` (`.github/workflows/deploy.yml` runs the tests, builds the engine image, and runs `wrangler deploy --env production`; needs the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`), or deploy from a machine with Docker:
+
+```bash
+npm run deploy:production -w @havoc/edge
+```
+
+`DATABASE_URL` uses SQLAlchemy's asyncpg form, e.g. `postgresql+asyncpg://user:pass@host:5432/db` (Neon, Supabase, RDS…).
+
+## 9. Decisions still open
+
+1. **Postgres provider** (Neon, Supabase, RDS…). If Worker-side reads are added later (e.g. share pages at the edge), use Hyperdrive.
+2. **Narration storage.** Audio is cached on the container's ephemeral disk and regenerated after a sleep. Move it to R2 and serve `audio/:n` from the Worker with R2 + Cache API when server-side TTS is enabled.
+3. **Deep links.** `havoc://game/CODE` works via the `scheme`; universal links / app links for `https://<domain>/g/CODE` need the domain decision plus an `apple-app-site-association` / `assetlinks.json` served by the Worker.
+4. **Clerk instance settings.** Add the native redirect and web origins to `authorized parties`; decide whether guests can upgrade to accounts mid-game (the seat model supports it if the engine re-binds the seat's `user_id`).

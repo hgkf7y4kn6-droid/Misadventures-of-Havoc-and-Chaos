@@ -37,7 +37,8 @@ export class GameRoom extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server, [playerId]);
     server.serializeAttachment({ playerId, window: [] } satisfies Attachment);
 
-    const r = await engine(this.env, "POST", `/internal/games/${code}/connect`, { player_id: playerId });
+    const r = await engine(this.env, "POST", `/internal/games/${code}/connect`, { player_id: playerId })
+      .catch(() => new Response(null, { status: 503 }));
     if (r.ok) {
       const { state } = (await r.json()) as { state: unknown };
       server.send(JSON.stringify({ type: "state", state }));
@@ -68,9 +69,13 @@ export class GameRoom extends DurableObject<Env> {
     }
     if ((message as { action?: string }).action === "ping") return;
     // Identity is fixed by the socket's tag: a client can never act as another player.
-    const r = await engine(this.env, "POST", `/internal/games/${await this.code()}/action`, { player_id: att.playerId, message });
-    const body = (await r.json().catch(() => ({}))) as { error?: string };
-    if (!r.ok || body.error) ws.send(JSON.stringify({ type: "error", message: body.error ?? "The game is unavailable. Retrying…" }));
+    try {
+      const r = await engine(this.env, "POST", `/internal/games/${await this.code()}/action`, { player_id: att.playerId, message });
+      const body = (await r.json().catch(() => ({}))) as { error?: string };
+      if (!r.ok || body.error) ws.send(JSON.stringify({ type: "error", message: body.error ?? "The game is waking up — try that again." }));
+    } catch {
+      ws.send(JSON.stringify({ type: "error", message: "The game is waking up — try that again in a moment." }));
+    }
   }
 
   async webSocketClose(ws: WebSocket) {
@@ -84,7 +89,9 @@ export class GameRoom extends DurableObject<Env> {
   private async dropped(ws: WebSocket) {
     const { playerId } = ws.deserializeAttachment() as Attachment;
     const others = this.ctx.getWebSockets(playerId).filter((s) => s !== ws && s.readyState === WebSocket.OPEN);
-    if (!others.length) await engine(this.env, "POST", `/internal/games/${await this.code()}/disconnect`, { player_id: playerId });
+    if (!others.length) {
+      await engine(this.env, "POST", `/internal/games/${await this.code()}/disconnect`, { player_id: playerId }).catch(() => undefined);
+    }
   }
 
   /** RPC from the Worker: an ordered batch of operations produced by the engine. */
@@ -111,13 +118,29 @@ export class GameRoom extends DurableObject<Env> {
     return { applied: ops.length, sockets: this.ctx.getWebSockets().length };
   }
 
-  /** Phase timer fired. Throwing makes Cloudflare retry with backoff; the engine ignores stale/duplicate tokens. */
+  /**
+   * Phase timer fired. If the engine is unreachable (container waking, rolling out, or crashed) the room
+   * re-arms itself with backoff instead of relying on platform retries; the engine ignores duplicate
+   * and stale tokens, so retrying is always safe.
+   */
   async alarm() {
-    const pending = await this.ctx.storage.get<PendingAlarm>("alarm");
+    const pending = await this.ctx.storage.get<PendingAlarm & { attempts?: number }>("alarm");
     if (!pending) return;
-    const r = await engine(this.env, "POST", `/internal/games/${await this.code()}/alarm`, { tag: pending.tag, token: pending.token });
-    if (r.status >= 500) throw new Error(`engine unavailable (${r.status})`);
-    const current = await this.ctx.storage.get<PendingAlarm>("alarm");
-    if (current?.token === pending.token) await this.ctx.storage.delete("alarm");
+    let ok = false;
+    try {
+      const r = await engine(this.env, "POST", `/internal/games/${await this.code()}/alarm`, { tag: pending.tag, token: pending.token });
+      ok = r.status < 500;
+    } catch (e) {
+      console.warn("engine unreachable for alarm", (e as Error).message);
+    }
+    const current = await this.ctx.storage.get<PendingAlarm & { attempts?: number }>("alarm");
+    if (current?.token !== pending.token) return; // the engine re-armed or cancelled meanwhile
+    if (ok) {
+      await this.ctx.storage.delete("alarm");
+      return;
+    }
+    const attempts = (pending.attempts ?? 0) + 1;
+    await this.ctx.storage.put("alarm", { ...pending, attempts });
+    await this.ctx.storage.setAlarm(Date.now() + Math.min(30_000, 1000 * 2 ** Math.min(attempts, 5)));
   }
 }

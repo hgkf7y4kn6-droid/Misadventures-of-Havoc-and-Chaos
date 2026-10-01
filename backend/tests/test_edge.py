@@ -184,3 +184,30 @@ async def test_edgelink_batches_and_preserves_order():
     await link.drain()
     assert seen == [["cancel_alarm", "alarm", "send"]]  # one request, in order
     await link.aclose()
+
+
+async def test_rehydrated_engine_keeps_edge_presence(tmp_path):
+    """At the edge, sockets outlive an engine restart, so presence must survive rehydration."""
+    from app.config import Settings
+    from app.engine.ports import ManualScheduler, NullPublisher
+    from app.llm.services import LLMService
+    from app.persistence.db import Repository
+    from app.realtime.hub import Hub
+    from app.registry import GameRegistry
+    from app.tts.providers.browser import BrowserTTS
+    from app.tts.service import TTSService
+
+    repo = Repository(f"sqlite+aiosqlite:///{tmp_path}/p.db")
+    await repo.init()
+    for edge_url, expected in (("https://edge.test", True), (None, False)):
+        settings = Settings(edge_secret=SECRET, edge_url=edge_url)
+
+        def registry(settings=settings):
+            return GameRegistry(settings, LLMService(None, settings), TTSService(BrowserTTS(), settings), Hub(), repo,
+                                publisher=NullPublisher(), scheduler=ManualScheduler())
+
+        mgr, host_id, _ = await registry().create("Alex", None, user_id=f"u-{expected}")
+        await mgr.set_connected(host_id, True)
+        reborn = await registry().get(mgr.state.code)  # a fresh process loading the game from the database
+        assert reborn.state.players[host_id].connected is expected
+    await repo.close()

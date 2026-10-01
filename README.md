@@ -50,7 +50,7 @@ The Anthropic provider uses the official SDK with structured outputs (default mo
 
 ### Cloudflare edge + native apps
 
-The same engine also runs behind a **Cloudflare Worker + one Durable Object per game** (sockets, alarms, auth at the edge), with **Expo** iOS/Android apps built by **EAS**, **Clerk** sign-in (guests still welcome) and **PostHog** analytics. See **[docs/architecture/cloud-native.md](docs/architecture/cloud-native.md)** for the topology, contracts, local runbook, verification status and open decisions.
+The same engine also runs behind a **Cloudflare Worker + one Durable Object per game** (sockets, alarms, auth at the edge), with **Expo** iOS/Android apps built by **EAS**, **Clerk** sign-in (guests still welcome) and **PostHog** analytics. In production the Python engine runs on **Cloudflare Containers** (`backend/Dockerfile`, sharded by game code) and deploys with `.github/workflows/deploy.yml`. See **[docs/architecture/cloud-native.md](docs/architecture/cloud-native.md)** for the topology, contracts, local runbook, verification status and open decisions.
 
 ```
 backend/           Python engine (authoritative rules, LLM/TTS, persistence)

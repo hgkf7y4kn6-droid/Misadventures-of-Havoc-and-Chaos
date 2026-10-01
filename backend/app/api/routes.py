@@ -1,4 +1,12 @@
-"""REST + WebSocket API. Every request that touches a game authenticates with the player's secret token."""
+"""Public REST + WebSocket API.
+
+``router`` (always mounted): health, config, read-only share links.
+``play_router`` (standalone deployments): sessions, games, tickets, sockets — the same contract the
+Cloudflare Worker exposes in edge deployments, so web and Expo clients work against either.
+
+Client flow (v2): identity (Clerk JWT or guest session) → create/join → seat → POST .../ticket →
+``/ws/{code}?ticket=``. The v1 flow (per-game seat ``token``) still works for existing clients.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +22,7 @@ from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from ..config import GAME_TITLE
 from ..engine.game_manager import GameError, GameManager
 from ..engine.visibility import project
+from ..identity import AuthError, Identity
 from ..models.events import ClientMessage, RealtimeEvent
 from ..models.game import Phase, Player
 from ..registry import GameRegistry
@@ -23,6 +32,7 @@ from ..tts.service import voice_for
 
 log = logging.getLogger("havoc.api")
 router = APIRouter()
+play_router = APIRouter()
 _client_message = TypeAdapter(ClientMessage)
 
 
@@ -42,26 +52,59 @@ class JoinGame(BaseModel):
     name: str = Field(min_length=1, max_length=32)
 
 
+class GuestSession(BaseModel):
+    name: str = Field(min_length=1, max_length=32)
+
+
 class Preferences(BaseModel):
     audio_enabled: bool | None = None
     narration_volume: float | None = Field(default=None, ge=0, le=1)
     preferred_voice: str | None = Field(default=None, max_length=32)
 
 
-async def authed(code: str, reg: GameRegistry, token: str | None) -> tuple[GameManager, Player]:
-    if not token:
-        raise HTTPException(401, "Missing player token")
-    try:
-        mgr = await reg.get(code)
-        return mgr, mgr.authenticate(token)
-    except GameError as exc:
-        raise HTTPException(404 if "code" in str(exc) else 403, str(exc)) from exc
-
-
 def bearer(authorization: str | None) -> str | None:
     if authorization and authorization.lower().startswith("bearer "):
         return authorization[7:].strip()
     return None
+
+
+def optional_identity(reg: GameRegistry, authorization: str | None) -> Identity | None:
+    """Identity if a Clerk/guest credential was sent; None for anonymous (v1) callers."""
+    cred = bearer(authorization)
+    if not cred:
+        return None
+    try:
+        return reg.identity.verify(cred)
+    except AuthError as exc:
+        raise HTTPException(401, f"Not signed in: {exc}") from exc
+
+
+async def resolve_player(code: str, reg: GameRegistry, credential: str | None = None, ticket: str | None = None) -> tuple[GameManager, Player]:
+    """Accepts a socket ticket, a v1 seat token, or a Clerk/guest identity that holds a seat."""
+    try:
+        mgr = await reg.get(code)
+    except GameError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    user_id = None
+    if ticket:
+        try:
+            user_id = reg.identity.read_ticket(ticket, mgr.state.code)
+        except AuthError as exc:
+            raise HTTPException(401, str(exc)) from exc
+    elif credential:
+        try:
+            return mgr, mgr.authenticate(credential)
+        except GameError:
+            try:
+                user_id = reg.identity.verify(credential).user_id
+            except AuthError as exc:
+                raise HTTPException(403, "Unknown player.") from exc
+    if not user_id:
+        raise HTTPException(401, "Missing credentials")
+    player = mgr.state.player_by_user(user_id)
+    if not player or user_id in mgr.state.kicked_user_ids:
+        raise HTTPException(403, "You don't have a seat in this game.")
+    return mgr, player
 
 
 @router.get("/api/health")
@@ -78,19 +121,36 @@ async def config(reg: Reg) -> dict[str, Any]:
         "tts": {"provider": reg.tts.provider.name, "server_side": reg.tts.server_side},
         "voices": [{"id": v.value, "description": VOICE_DESCRIPTIONS[v]} for v in VoiceStyle],
         "adventure_lengths": {"short": s.story_words_short, "medium": s.story_words_medium, "long": s.story_words_long},
+        "transport": "edge" if s.edge_secret else "direct",
+        "auth": {"guests": True, "clerk": bool(s.clerk_jwks_url or s.clerk_jwt_key)},
     }
 
 
-@router.post("/api/games")
-async def create_game(body: CreateGame, reg: Reg) -> dict[str, str]:
+@play_router.post("/api/session/guest")
+async def guest_session(body: GuestSession, reg: Reg) -> dict[str, Any]:
+    token, ident, exp = reg.identity.issue_guest(body.name)
+    return {"token": token, "user_id": ident.user_id, "kind": "guest", "expires_at": exp}
+
+
+@play_router.get("/api/session")
+async def whoami(reg: Reg, authorization: Annotated[str | None, Header()] = None) -> dict[str, Any]:
+    ident = optional_identity(reg, authorization)
+    if not ident:
+        raise HTTPException(401, "Not signed in")
+    return {"user_id": ident.user_id, "kind": ident.kind, "name": ident.name}
+
+
+@play_router.post("/api/games")
+async def create_game(body: CreateGame, reg: Reg, authorization: Annotated[str | None, Header()] = None) -> dict[str, str]:
+    ident = optional_identity(reg, authorization)
     try:
-        mgr, pid, token = await reg.create(body.name, body.settings)
+        mgr, pid, token = await reg.create(body.name, body.settings, user_id=ident.user_id if ident else None)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(400, f"Could not create game: {exc}") from exc
     return {"code": mgr.state.code, "game_id": mgr.state.game_id, "player_id": pid, "token": token}
 
 
-@router.get("/api/games/{code}")
+@play_router.get("/api/games/{code}")
 async def lobby_info(code: str, reg: Reg) -> dict[str, Any]:
     try:
         mgr = await reg.get(code)
@@ -101,25 +161,36 @@ async def lobby_info(code: str, reg: Reg) -> dict[str, Any]:
             "joinable": s.phase == Phase.LOBBY and len(s.active_players()) < s.settings.max_players, "title": GAME_TITLE}
 
 
-@router.post("/api/games/{code}/join")
-async def join_game(code: str, body: JoinGame, reg: Reg) -> dict[str, str]:
+@play_router.post("/api/games/{code}/join")
+async def join_game(code: str, body: JoinGame, reg: Reg, authorization: Annotated[str | None, Header()] = None) -> dict[str, str]:
+    ident = optional_identity(reg, authorization)
     try:
         mgr = await reg.get(code)
-        p = await mgr.join(body.name)
+        p = await mgr.join(body.name, user_id=ident.user_id if ident else None)
     except GameError as exc:
         raise HTTPException(400, str(exc)) from exc
     return {"code": mgr.state.code, "game_id": mgr.state.game_id, "player_id": p.id, "token": p.token}
 
 
-@router.get("/api/games/{code}/state")
+@play_router.post("/api/games/{code}/ticket")
+async def socket_ticket(code: str, reg: Reg, authorization: Annotated[str | None, Header()] = None) -> dict[str, Any]:
+    """Short-lived (60s) credential for opening the game socket; keeps long-lived tokens out of URLs."""
+    ident = optional_identity(reg, authorization)
+    if not ident:
+        raise HTTPException(401, "Sign in or start a guest session first.")
+    mgr, p = await resolve_player(code, reg, bearer(authorization))
+    return {"ticket": reg.identity.issue_ticket(ident.user_id, mgr.state.code), "expires_in": 60, "player_id": p.id}
+
+
+@play_router.get("/api/games/{code}/state")
 async def get_state(code: str, reg: Reg, authorization: Annotated[str | None, Header()] = None) -> dict[str, Any]:
-    mgr, p = await authed(code, reg, bearer(authorization))
+    mgr, p = await resolve_player(code, reg, bearer(authorization))
     return project(mgr.state, p.id)
 
 
-@router.put("/api/games/{code}/preferences")
+@play_router.put("/api/games/{code}/preferences")
 async def put_preferences(code: str, body: Preferences, reg: Reg, authorization: Annotated[str | None, Header()] = None) -> dict[str, Any]:
-    mgr, p = await authed(code, reg, bearer(authorization))
+    mgr, p = await resolve_player(code, reg, bearer(authorization))
     from ..models.events import SetPreferences
 
     await mgr.set_preferences(p, SetPreferences(action="set_preferences", **body.model_dump()))
@@ -133,10 +204,14 @@ def story_text(title: str, chapters: list[dict], epilogues: dict[str, str] | Non
     return "\n".join(parts) + f"\n— Generated by {GAME_TITLE}\n"
 
 
-@router.get("/api/games/{code}/story.txt", response_class=PlainTextResponse)
-async def download_story(code: str, reg: Reg, token: str | None = Query(default=None),
+@play_router.get("/api/games/{code}/story.txt", response_class=PlainTextResponse)
+async def download_story(code: str, reg: Reg, token: str | None = Query(default=None), ticket: str | None = Query(default=None),
                          authorization: Annotated[str | None, Header()] = None) -> Response:
-    mgr, _ = await authed(code, reg, bearer(authorization) or token)
+    mgr, _ = await resolve_player(code, reg, bearer(authorization) or token, ticket)
+    return story_download(mgr)
+
+
+def story_download(mgr: GameManager) -> Response:
     story = mgr.state.final_story
     if not story or mgr.state.phase != Phase.ENDED:
         raise HTTPException(409, "The story isn't finished yet.")
@@ -145,12 +220,17 @@ async def download_story(code: str, reg: Reg, token: str | None = Query(default=
     return PlainTextResponse(body, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
-@router.get("/api/games/{code}/audio/{chapter}")
+@play_router.get("/api/games/{code}/audio/{chapter}")
 async def chapter_audio(code: str, chapter: int, reg: Reg, token: str | None = Query(default=None),
+                        ticket: str | None = Query(default=None),
                         voice: str | None = Query(default=None), speed: float = Query(default=1.0, ge=0.5, le=2.0),
                         authorization: Annotated[str | None, Header()] = None) -> Response:
-    """Narration for one chapter. Audio elements can't send headers, so ?token= is accepted too."""
-    mgr, p = await authed(code, reg, bearer(authorization) or token)
+    """Narration for one chapter. Audio elements can't send headers, so ?ticket= / ?token= are accepted."""
+    mgr, p = await resolve_player(code, reg, bearer(authorization) or token, ticket)
+    return await audio_response(reg, mgr, p, chapter, voice, speed)
+
+
+async def audio_response(reg: GameRegistry, mgr: GameManager, p: Player, chapter: int, voice: str | None, speed: float) -> Response:
     story = mgr.state.final_story
     if not story or mgr.state.phase != Phase.ENDED:
         raise HTTPException(409, "The story isn't finished yet.")
@@ -192,15 +272,14 @@ async def shared_story_txt(share_id: str, reg: Reg) -> Response:
                              headers={"Content-Disposition": f'attachment; filename="havoc-and-chaos-{share_id}.txt"'})
 
 
-@router.websocket("/ws/{code}")
-async def websocket(ws: WebSocket, code: str, token: str = Query(...)) -> None:
+@play_router.websocket("/ws/{code}")
+async def websocket(ws: WebSocket, code: str, token: str | None = Query(default=None), ticket: str | None = Query(default=None)) -> None:
     reg: GameRegistry = ws.app.state.registry
     try:
-        mgr = await reg.get(code)
-        player = mgr.authenticate(token)
-    except GameError as exc:
+        mgr, player = await resolve_player(code, reg, token, ticket)
+    except HTTPException as exc:
         await ws.accept()
-        await ws.send_json({"type": "error", "message": str(exc), "fatal": True})
+        await ws.send_json({"type": "error", "message": str(exc.detail), "fatal": True})
         await ws.close(code=4004)
         return
     await ws.accept()

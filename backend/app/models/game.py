@@ -186,6 +186,7 @@ class PlayerStats(BaseModel):
 class Player(BaseModel):
     id: str = Field(default_factory=lambda: new_id("p_"))
     token: str = ""  # secret, never projected
+    user_id: str | None = None  # stable identity (Clerk user or guest session), never projected
     name: str
     is_host: bool = False
     ready: bool = False
@@ -518,6 +519,11 @@ class FinalStory(BaseModel):
 class Timers(BaseModel):
     phase_deadline: float | None = None
     phase_started_at: float = Field(default_factory=now)
+    # The currently armed timer. Persisted so any host (asyncio task, Durable Object alarm)
+    # can deliver it later; a firing with a different token is stale and ignored.
+    armed_tag: str | None = None
+    armed_token: str | None = None
+    fires_at: float | None = None
 
 
 class GameState(BaseModel):
@@ -530,6 +536,7 @@ class GameState(BaseModel):
     host_id: str | None = None
     players: dict[str, Player] = Field(default_factory=dict)
     kicked_tokens: list[str] = Field(default_factory=list)
+    kicked_user_ids: list[str] = Field(default_factory=list)
 
     theme_submissions: dict[str, ThemeSubmission] = Field(default_factory=dict)
     theme_options: list[ThemeOption] = Field(default_factory=list)
@@ -577,6 +584,12 @@ class GameState(BaseModel):
 
     def able_players(self) -> list[Player]:
         return [p for p in self.players.values() if p.status == PlayerStatus.ACTIVE]
+
+    def player_by_user(self, user_id: str) -> Player | None:
+        for p in self.players.values():
+            if p.user_id and p.user_id == user_id and p.status != PlayerStatus.LEFT:
+                return p
+        return None
 
     def player_by_token(self, token: str) -> Player | None:
         for p in self.players.values():

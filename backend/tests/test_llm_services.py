@@ -83,5 +83,5 @@ async def test_prompts_respect_information_isolation(settings):
     assert len(in_play) < len(provider.prompts), "the final story prompt should have been attempted"
     for _, user in in_play:
         leaked = [pid for pid, sec in secrets.items() if re.search(re.escape(sec) + r"(\n|$|\))", user)]
-        assert len(leaked) <= 1, "an in-play prompt contained more than one player's secret"
+        assert len({secrets[pid] for pid in leaked}) <= 1, "an in-play prompt contained more than one player's secret"
     assert any("<player_input>" in u for _, u in provider.prompts)

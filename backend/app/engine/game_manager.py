@@ -15,7 +15,7 @@ import secrets
 import string
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, Protocol
+from typing import Any
 
 from ..config import GAME_TITLE, Settings
 from ..llm.safety import clean_text, defang, looks_like_injection
@@ -61,6 +61,7 @@ from .resolution import (
     resolve_round,
     round_upkeep,
 )
+from .ports import Analytics, AsyncioScheduler, NullAnalytics, NullPublisher, NullStore, Publisher, Scheduler, Store
 from .visibility import authorized_context, project, public_context
 
 log = logging.getLogger("havoc.engine")
@@ -70,35 +71,6 @@ class GameError(Exception):
     """A rule violation reported back to the offending client."""
 
 
-class Publisher(Protocol):
-    async def to_player(self, code: str, player_id: str, message: dict[str, Any]) -> None: ...
-    async def disconnect_player(self, code: str, player_id: str) -> None: ...
-
-
-class Store(Protocol):
-    async def save(self, state: GameState) -> None: ...
-    async def archive(self, state: GameState) -> None: ...
-
-
-class NullPublisher:
-    def __init__(self) -> None:
-        self.messages: list[tuple[str, str, dict[str, Any]]] = []
-
-    async def to_player(self, code: str, player_id: str, message: dict[str, Any]) -> None:
-        self.messages.append((code, player_id, message))
-
-    async def disconnect_player(self, code: str, player_id: str) -> None:
-        return None
-
-
-class NullStore:
-    async def save(self, state: GameState) -> None:
-        return None
-
-    async def archive(self, state: GameState) -> None:
-        return None
-
-
 def make_code() -> str:
     alphabet = "".join(c for c in string.ascii_uppercase if c not in "IO")
     return "".join(secrets.choice(alphabet) for _ in range(5))
@@ -106,42 +78,46 @@ def make_code() -> str:
 
 class GameManager:
     def __init__(self, state: GameState, llm: LLMService, settings: Settings, publisher: Publisher, store: Store,
-                 audio_hook: Callable[[GameState], Awaitable[None]] | None = None):
+                 audio_hook: Callable[[GameState], Awaitable[None]] | None = None,
+                 scheduler: Scheduler | None = None, analytics: Analytics | None = None):
         self.state = state
         self.llm = llm
         self.settings = settings
         self.publisher = publisher
         self.store = store
         self.audio_hook = audio_hook
+        self.scheduler: Scheduler = scheduler or AsyncioScheduler()
+        self.analytics: Analytics = analytics or NullAnalytics()
         self.lock = asyncio.Lock()
-        self._timer: asyncio.Task | None = None
-        self._timer_tag: str | None = None
         self._background: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------ setup
 
     @classmethod
     def new(cls, host_name: str, llm: LLMService, settings: Settings, publisher: Publisher, store: Store,
-            game_settings: dict | None = None, audio_hook=None) -> tuple[GameManager, Player]:
+            game_settings: dict | None = None, audio_hook=None, *, user_id: str | None = None, code: str | None = None,
+            scheduler: Scheduler | None = None, analytics: Analytics | None = None) -> tuple[GameManager, Player]:
         gs = GameSettings(
             min_players=settings.min_players, max_players=settings.default_max_players,
             theme_submission_seconds=settings.theme_submission_seconds, theme_voting_seconds=settings.theme_voting_seconds,
             character_creation_seconds=settings.character_creation_seconds, decision_seconds=settings.decision_seconds,
         )
-        state = GameState(code=make_code(), settings=gs, random_seed=secrets.randbits(48))
-        mgr = cls(state, llm, settings, publisher, store, audio_hook)
+        state = GameState(code=code or make_code(), settings=gs, random_seed=secrets.randbits(48))
+        mgr = cls(state, llm, settings, publisher, store, audio_hook, scheduler, analytics)
         if game_settings:
             mgr._apply_settings(game_settings)
-        host = mgr._add_player(host_name, is_host=True)
+        host = mgr._add_player(host_name, is_host=True, user_id=user_id)
+        mgr.track("game_created", host, {"adventure_length": state.settings.adventure_length.value,
+                                         "max_players": state.settings.max_players, "signed_in": bool(user_id)})
         return mgr, host
 
-    def _add_player(self, name: str, is_host: bool = False) -> Player:
+    def _add_player(self, name: str, is_host: bool = False, user_id: str | None = None) -> Player:
         name = clean_text(name, 32) or "Mystery Guest"
         existing = {p.name.lower() for p in self.state.players.values()}
         base, n = name, 2
         while name.lower() in existing:
             name, n = f"{base} {n}", n + 1
-        p = Player(name=name, token=secrets.token_urlsafe(24), is_host=is_host)
+        p = Player(name=name, token=secrets.token_urlsafe(24), is_host=is_host, user_id=user_id)
         p.character.name = name
         p.character.avatar = rng.pick(self.state.random_seed, procgen.AVATARS, "avatar", len(self.state.players))
         p.character.color = rng.pick(self.state.random_seed, ["#f97316", "#a855f7", "#22c55e", "#eab308", "#ec4899", "#06b6d4", "#ef4444", "#84cc16"], "color", len(self.state.players))
@@ -150,15 +126,22 @@ class GameManager:
             self.state.host_id = p.id
         return p
 
-    async def join(self, name: str) -> Player:
+    async def join(self, name: str, user_id: str | None = None) -> Player:
         async with self.lock:
             s = self.state
+            if user_id:
+                if user_id in s.kicked_user_ids:
+                    raise GameError("You were removed from this game.")
+                seated = s.player_by_user(user_id)
+                if seated:  # same account rejoining (new device, app restart): same seat, any phase
+                    return seated
             if s.phase != Phase.LOBBY:
                 raise GameError("This adventure has already started. Ask the host to restart it.")
             if len(s.active_players()) >= s.settings.max_players:
                 raise GameError("The lobby is full.")
-            p = self._add_player(name)
+            p = self._add_player(name, user_id=user_id)
             await self._commit()
+        self.track("player_joined", p, {"players": len(self.state.active_players()), "signed_in": bool(user_id)})
         await self.emit(E.PLAYER_JOINED, {"player_id": p.id, "name": p.name})
         await self.sync()
         return p
@@ -179,6 +162,18 @@ class GameManager:
         if not connected:
             await self.emit(E.PLAYER_LEFT, {"player_id": player_id, "temporary": True})
         await self.sync()
+
+    # ------------------------------------------------------------ analytics
+
+    def track(self, event: str, player: Player | None = None, props: dict[str, Any] | None = None) -> None:
+        """Product analytics. Only counts, enums and ids — never player-written text or secrets."""
+        try:
+            distinct = (player.user_id or player.id) if player else f"game:{self.state.game_id}"
+            base = {"game_id": self.state.game_id, "phase": self.state.phase.value,
+                    "players": len(self.state.active_players()), "llm": self.llm.name}
+            self.analytics.capture(event, distinct, {**base, **(props or {})}, {"game": self.state.game_id})
+        except Exception:  # noqa: BLE001 - analytics must never affect play
+            log.debug("analytics capture failed", exc_info=True)
 
     # ------------------------------------------------------------ messaging
 
@@ -304,12 +299,15 @@ class GameManager:
             if not target or target.id == p.id:
                 raise GameError("Cannot remove that player.")
             self.state.kicked_tokens.append(target.token)
+            if target.user_id:
+                self.state.kicked_user_ids.append(target.user_id)
             if self.state.phase == Phase.LOBBY:
                 del self.state.players[target.id]
             else:
                 target.status = PlayerStatus.LEFT
                 target.connected = False
             await self._commit()
+        self.track("player_kicked", p, {})
         await self.publisher.disconnect_player(self.state.code, target.id)
         await self.emit(E.PLAYER_KICKED, {"player_id": target.id, "name": target.name})
         await self.sync()
@@ -330,6 +328,7 @@ class GameManager:
             self._system(f"Welcome to {GAME_TITLE}. Everybody: pitch a story theme. Nobody can see your pitch until submissions close.",
                          "Theme Submissions Open")
             await self._commit()
+        self.track("game_started", p, {"adventure_length": self.state.settings.adventure_length.value})
         await self.emit(E.GAME_STARTED, {"phase": self.state.phase})
         await self.sync()
 
@@ -361,29 +360,33 @@ class GameManager:
             self._schedule(seconds, phase.value)
 
     def _cancel_timer(self) -> None:
-        if self._timer and not self._timer.done() and self._timer is not asyncio.current_task():
-            self._timer.cancel()
-        self._timer = None
-        self._timer_tag = None
+        t = self.state.timers
+        if t.armed_token is None:
+            return
+        t.armed_tag = t.armed_token = None
+        t.fires_at = None
+        self.scheduler.cancel(self.state.code)
 
     def _schedule(self, seconds: float, tag: str) -> None:
-        version_tag = f"{tag}:{self.state.turn_number}:{time.monotonic()}"
-        self._timer_tag = version_tag
+        t = self.state.timers
+        t.armed_tag, t.armed_token, t.fires_at = tag, secrets.token_hex(8), now() + seconds
+        self.scheduler.arm(self.state.code, seconds, tag, t.armed_token, self.fire_timer)
 
-        async def fire() -> None:
-            try:
-                await asyncio.sleep(seconds)
-                if self._timer_tag == version_tag:
-                    await self.on_timeout(tag)
-            except asyncio.CancelledError:
-                pass
-            except Exception:  # noqa: BLE001
-                log.exception("timer %s failed", tag)
+    def rearm(self) -> None:
+        """Re-deliver the persisted timer to the scheduler (after a restart / rehydration)."""
+        t = self.state.timers
+        if t.armed_tag and t.armed_token and t.fires_at:
+            self.scheduler.arm(self.state.code, max(0.5, t.fires_at - now()), t.armed_tag, t.armed_token, self.fire_timer)
 
-        try:
-            self._timer = asyncio.get_running_loop().create_task(fire())
-        except RuntimeError:  # no loop (sync tests)
-            self._timer = None
+    async def fire_timer(self, tag: str, token: str) -> bool:
+        """Entry point for every timer host. Stale or duplicate firings are ignored."""
+        t = self.state.timers
+        if not token or token != t.armed_token or tag != t.armed_tag:
+            return False
+        t.armed_tag = t.armed_token = None
+        t.fires_at = None
+        await self.on_timeout(tag)
+        return True
 
     def _spawn(self, coro) -> None:
         task = asyncio.get_running_loop().create_task(coro)
@@ -519,6 +522,8 @@ class GameManager:
             chronicle.record(s, "objective", importance=4, public_information=obj.description,
                              narrative_summary=f"The party chose the theme \"{s.theme}\" and set out to {obj.title.lower()}: {obj.description}")
             await self._commit()
+        self.track("theme_selected", None, {"options": len(self.state.theme_options), "votes": len(self.state.theme_votes),
+                                            "merged_submissions": sum(len(o.originals) - 1 for o in self.state.theme_options)})
         await self.emit(E.THEME_SELECTED, {"theme": self.state.theme, "tally": self.state.theme_tally})
         await self.emit(E.OBJECTIVE_REVEALED, {"objective": self.state.objective.model_dump() if self.state.objective else None})
         await self.sync()
@@ -588,6 +593,8 @@ class GameManager:
                              narrative_summary=f"The party assembled: {party}.")
             s.phase = Phase.ADVENTURE
             await self._commit()
+        self.track("adventure_started", None, {"total_rounds": self.state.total_rounds,
+                                               "characters_auto_assigned": sum(1 for x in self.state.story_history if x.title == "Character Assigned")})
         await self._next_round()
 
     # ------------------------------------------------------------ rounds
@@ -803,6 +810,8 @@ class GameManager:
             if freeform and looks_like_injection(msg.freeform or ""):
                 log.info("possible prompt injection from %s defanged", p.id)
             await self._commit()
+        self.track("decision_submitted", p, {"kind": g.kind.value, "freeform": bool(msg.freeform), "push_luck": msg.push_luck,
+                                             "use_ability": msg.use_ability, "used_item": bool(msg.item_id), "round": g.round})
         await self.emit(E.DECISION_SUBMITTED, {"group_id": g.group_id, "player_id": p.id}, audience=g.player_ids)
         await self.sync(only=g.player_ids)
         await self._maybe_advance()
@@ -1013,6 +1022,14 @@ class GameManager:
         for o in outcomes:
             for k, v in o.result.resource_changes.items():
                 changes[k] = changes.get(k, 0) + v
+        tiers: dict[str, int] = {}
+        for o in outcomes:
+            tiers[o.result.tier.value] = tiers.get(o.result.tier.value, 0) + 1
+        self.track("scene_resolved", None, {
+            "round": s.turn_number, "beat": rnd.beat if rnd else None, "timeout": timeout, "actions": len(outcomes),
+            "freeform_actions": sum(1 for o in outcomes if o.planned.freeform), "rogue_actions": sum(1 for o in outcomes if o.planned.rogue),
+            "interactions": len(resolution.interactions), "comm_mode": s.comm_mode.value, "tiers": tiers,
+            "objective_progress": s.objective_progress})
         await self.emit(E.DECISION_RESOLVED, {"round": s.turn_number})
         await self.emit(E.RESOURCE_CHANGED, {"changes": changes, "resources": {k: v.value for k, v in s.shared_resources.items()}})
         await self.emit(E.SCENE_RESOLVED, {"round": s.turn_number})
@@ -1139,6 +1156,9 @@ class GameManager:
         s.timers.phase_deadline = None
         await self._commit()
         won = kind != GameOutcomeKind.FAILURE
+        self.track("game_completed", None, {"outcome": kind.value, "won": won, "doomed": bool(doom_reason), "rounds": s.turn_number,
+                                            "final_score": score, "final_target": target, "duration_s": round(now() - s.created_at),
+                                            "hidden_truths_found": sum(1 for hv in s.hidden_variables if hv.discovered_by)})
         await self.emit(E.GAME_WON if won else E.GAME_LOST, {"kind": kind, "headline": headlines[kind]})
         await self.emit(E.FINAL_STORY_GENERATION_STARTED, {})
         self._spawn(self._generate_final_story())
@@ -1162,6 +1182,11 @@ class GameManager:
                 await asyncio.shield(self.store.archive(s))
             except Exception:  # noqa: BLE001
                 log.exception("failed to archive adventure %s", s.code)
+        self.track("story_generated", None, {"generated_by": story.generated_by, "words": story.word_count,
+                                             "chapters": len(story.chapters),
+                                             "validation_passed": bool(story.validation and story.validation.passed),
+                                             "validation_attempts": story.validation.attempts if story.validation else 0,
+                                             "validation_issues": len(story.validation.issues) if story.validation else 0})
         await self.emit(E.FINAL_STORY_GENERATED, {"title": story.title, "chapters": len(story.chapters), "words": story.word_count})
         await self.emit(E.GAME_ENDED, {"share_id": s.share_id})
         await self.sync()
@@ -1261,4 +1286,4 @@ def summarize_tier(tier: OutcomeTier) -> bool:
     return tier in SUCCESSES
 
 
-__all__ = ["GameError", "GameManager", "NullPublisher", "NullStore", "make_code", "label"]
+__all__ = ["GameError", "GameManager", "NullPublisher", "NullStore", "make_code", "label"]  # adapters re-exported from ports

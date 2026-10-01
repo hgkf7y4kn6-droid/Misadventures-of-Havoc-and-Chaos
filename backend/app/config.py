@@ -61,6 +61,25 @@ class Settings(BaseSettings):
     # Rate limiting for websocket messages (per connection)
     ws_messages_per_10s: int = 40
 
+    # Identity: guest sessions + socket tickets are HMAC-signed with this secret (pin it in production)
+    session_secret: str | None = None
+    guest_session_days: int = 30
+    # Clerk (optional). Either a JWKS URL (https://<your-clerk-domain>/.well-known/jwks.json) or the
+    # PEM public key from the Clerk dashboard for networkless verification.
+    clerk_jwks_url: str | None = None
+    clerk_jwt_key: str | None = None
+    clerk_issuer: str | None = None
+    clerk_authorized_parties: list[str] = Field(default_factory=list)
+
+    # PostHog (optional) — server-side product analytics; never receives player-written text
+    posthog_api_key: str | None = None
+    posthog_host: str = "https://us.i.posthog.com"
+
+    # Cloudflare edge mode: the engine runs behind a Durable Object per game.
+    # edge_secret signs engine<->edge traffic; edge_url is where the engine pushes socket messages + alarms.
+    edge_secret: str | None = None
+    edge_url: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:

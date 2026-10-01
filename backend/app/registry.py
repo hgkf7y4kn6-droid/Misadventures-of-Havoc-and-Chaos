@@ -6,10 +6,11 @@ import asyncio
 import logging
 
 from .config import Settings
-from .engine.game_manager import GameError, GameManager
+from .engine.game_manager import GameError, GameManager, make_code
+from .engine.ports import Analytics, AsyncioScheduler, NullAnalytics, Publisher, Scheduler
 from .llm.services import LLMService
 from .models.events import RealtimeEvent as E
-from .models.game import GameState, Phase, now
+from .models.game import GameState, Phase
 from .persistence.db import Repository
 from .realtime.hub import Hub
 from .tts.service import TTSService, voice_for
@@ -18,20 +19,34 @@ log = logging.getLogger("havoc.registry")
 
 
 class GameRegistry:
-    def __init__(self, settings: Settings, llm: LLMService, tts: TTSService, hub: Hub, repo: Repository):
+    def __init__(self, settings: Settings, llm: LLMService, tts: TTSService, hub: Hub, repo: Repository, *,
+                 publisher: Publisher | None = None, scheduler: Scheduler | None = None,
+                 analytics: Analytics | None = None):
         self.settings = settings
         self.llm = llm
         self.tts = tts
         self.hub = hub
         self.repo = repo
+        # Standalone: local hub + asyncio timers. Edge mode: an EdgeLink for both (sockets + alarms live in the DO).
+        self.publisher: Publisher = publisher or hub
+        self.scheduler: Scheduler = scheduler or AsyncioScheduler()
+        self.analytics: Analytics = analytics or NullAnalytics()
         self.games: dict[str, GameManager] = {}
         self._lock = asyncio.Lock()
+        from .identity import IdentityService
 
-    async def create(self, host_name: str, game_settings: dict | None) -> tuple[GameManager, str, str]:
-        mgr, host = GameManager.new(host_name, self.llm, self.settings, self.hub, self.repo, game_settings, self.audio_hook)
-        while mgr.state.code in self.games or await self.repo.load(mgr.state.code):
-            from .engine.game_manager import make_code
+        self.identity = IdentityService(settings)
 
+    def _manager(self, state: GameState) -> GameManager:
+        return GameManager(state, self.llm, self.settings, self.publisher, self.repo, self.audio_hook, self.scheduler, self.analytics)
+
+    async def create(self, host_name: str, game_settings: dict | None, *, user_id: str | None = None,
+                     code: str | None = None) -> tuple[GameManager, str, str]:
+        if code and (code in self.games or await self.repo.load(code)):
+            raise GameError("That game code is taken.")
+        mgr, host = GameManager.new(host_name, self.llm, self.settings, self.publisher, self.repo, game_settings, self.audio_hook,
+                                    user_id=user_id, code=code, scheduler=self.scheduler, analytics=self.analytics)
+        while not code and (mgr.state.code in self.games or await self.repo.load(mgr.state.code)):
             mgr.state.code = make_code()
         self.games[mgr.state.code] = mgr
         await self.repo.save(mgr.state)
@@ -55,14 +70,8 @@ class GameRegistry:
         for p in state.players.values():
             p.connected = False
         state.world_state["resolving"] = False
-        mgr = GameManager(state, self.llm, self.settings, self.hub, self.repo, self.audio_hook)
-        deadline = state.timers.phase_deadline
-        if state.settings.auto_advance and deadline and state.phase not in (Phase.LOBBY, Phase.ENDED, Phase.STORY_GENERATION):
-            remaining = max(1.0, deadline - now())
-            tag = state.phase.value
-            if state.phase == Phase.ADVENTURE and not state.pending_decisions:
-                tag = "resolution_pause"
-            mgr._schedule(remaining, tag)
+        mgr = self._manager(state)
+        mgr.rearm()
         if state.phase == Phase.STORY_GENERATION:
             mgr._spawn(mgr._generate_final_story())
         return mgr

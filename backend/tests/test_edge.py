@@ -152,7 +152,7 @@ def test_full_game_through_the_durable_object_contract(edge):
                 acted = True
         if not acted and room.alarm:  # nothing to do: the DO's alarm moves things along
             call(client, "POST", f"/internal/games/{code}/alarm", {"tag": room.alarm["tag"], "token": room.alarm["token"]})
-        wait(lambda: (phase(), room.states[host].get("turn_number"), room.states[host].get("version")) != before)
+        wait(lambda before=before: (phase(), room.states[host].get("turn_number"), room.states[host].get("version")) != before)
 
     wait(lambda: phase() == "ended" and room.states[host].get("final_story") is not None, timeout=20)
     assert room.states[guest]["final_story"]["chapters"]

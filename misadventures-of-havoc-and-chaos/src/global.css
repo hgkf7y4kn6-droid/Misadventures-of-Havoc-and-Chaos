@@ -1,3 +1,39 @@
+/* Tailwind (via NativeWind v5): one source of truth for colors, spacing and fonts. */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import 'tailwindcss/utilities.css';
+@import 'nativewind/theme';
+
+@theme {
+  /* Colors — The Misadventures of Havoc and Chaos */
+  --color-primary: #ff6b35; /* havoc orange */
+  --color-secondary: #ff3d8b; /* chaos pink */
+  --color-accent: #ffd23f; /* zap yellow */
+  --color-success: #8bea4d;
+  --color-info: #4dd8ff;
+  --color-ink: #1a1033; /* app background */
+  --color-ink-light: #251845; /* cards */
+  --color-ink-lighter: #33235c; /* raised surfaces */
+  --color-paper: #fff8e7;
+  --color-muted: #c4b5fd;
+
+  /* Spacing — 4-point grid, named by size (p-md, gap-lg, …) */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-xxl: 48px;
+
+  /* Fonts — each value is the exact family name registered with useFonts in src/app/_layout.tsx,
+     so `font-sans-bold` resolves to the "sans-bold" family → PlusJakartaSans_700Bold. */
+  --font-sans-regular: sans-regular;
+  --font-sans-medium: sans-medium;
+  --font-sans-semibold: sans-semibold;
+  --font-sans-bold: sans-bold;
+  --font-sans-extrabold: sans-extrabold;
+}
+
 :root {
   --font-display:
     Spline Sans, Inter, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji,

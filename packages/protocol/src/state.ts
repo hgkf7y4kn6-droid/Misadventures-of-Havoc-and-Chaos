@@ -31,13 +31,28 @@ export interface Objective {
   title: string; description: string; tagline: string; success_conditions: string[]; failure_conditions: string[];
   world_rules: string[]; progress_target: number; final_challenge: string; antagonist: string; macguffin: string;
 }
-export interface Choice { id: string; label: string; description: string; tags: string[]; risk: Risk; stat: string; cost: Record<string, number>; advances_objective: boolean }
+export interface Choice {
+  id: string; label: string; description: string; tags: string[]; risk: Risk; stat: string; cost: Record<string, number>;
+  advances_objective: boolean;
+  /** Encounter answers only: the persona ("The Diplomat"). The description is the potential-outcome teaser. */
+  style?: string;
+  encounter_option?: string | null;
+}
+export type EncounterCategory =
+  | "ridiculous_social" | "no_stupid_questions" | "petty_revenge" | "absurd_hypothetical" | "ridiculous_challenge";
+export type EncounterMode = "individual" | "group_vote" | "secret_council";
+/** A Ridiculous Encounter as one responder sees it. Consequences are never projected. */
+export interface EncounterView {
+  id: string; category: EncounterCategory; category_label: string; category_emoji: string; title: string;
+  npc_name: string; npc_emoji: string; question: string; mode: EncounterMode; is_callback: boolean;
+}
 export interface InfoItem { id: string; visibility: Visibility; audience: string[]; kind: string; title: string; text: string; round: number }
 export interface Decision {
   group_id: string; round: number; kind: "individual" | "group" | "final"; title: string; player_ids: string[];
   shared_context: string; visible_information: InfoItem[]; available_choices: Choice[]; allow_freeform: boolean;
   deadline: number | null; comm_mode: CommMode; submitted: Record<string, boolean>;
   my_submission: { choice_id: string | null; freeform: string | null } | null;
+  encounter?: EncounterView | null;
 }
 export interface StoryEntry { id: string; round: number; kind: string; title: string; text: string; visibility: Visibility; created_at: number }
 export interface ChatMessage { id: string; channel: string; sender_id: string | null; sender_name: string; text: string; audience: string[]; created_at: number }
@@ -51,8 +66,10 @@ export interface FinalStory { title: string; chapters: Chapter[]; epilogues: Rec
 export interface ThemeOptionView { id: string; title: string; merged_count: number; originals?: string[]; votes?: number }
 export interface NPCView { id: string; name: string; emoji: string; personality: string; disposition: number }
 export interface Round { number: number; beat: string; title: string; comm_mode: CommMode; escalation: number }
+export type EncounterFrequency = "off" | "occasional" | "normal" | "heartbeat";
 export interface GameSettings {
   min_players: number; max_players: number; adventure_length: "short" | "medium" | "long";
+  encounter_frequency: EncounterFrequency;
   theme_submission_seconds: number; theme_voting_seconds: number; character_creation_seconds: number; decision_seconds: number;
   default_comm_mode: CommMode; allow_public_share: boolean; narrator_voice: string; auto_advance: boolean;
 }

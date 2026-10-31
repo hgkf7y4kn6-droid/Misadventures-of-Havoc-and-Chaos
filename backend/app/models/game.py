@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 import uuid
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -97,6 +97,20 @@ class Risk(StrEnum):
     WILD = "wild"
 
 
+class EncounterCategory(StrEnum):
+    SOCIAL = "ridiculous_social"  # arguments, petty disagreements, absurd competitions
+    QUESTIONS = "no_stupid_questions"  # NPCs ask sincere but bizarre questions
+    PETTY = "petty_revenge"  # minor grievances escalate into elaborate missions
+    HYPOTHETICAL = "absurd_hypothetical"  # impossible circumstances, serious consequences
+    CHALLENGE = "ridiculous_challenge"  # mundane tasks under absurd restrictions
+
+
+class EncounterMode(StrEnum):
+    INDIVIDUAL = "individual"  # one player, alone
+    VOTE = "group_vote"  # a decision group answers together (plurality wins, dissenters may go rogue)
+    COUNCIL = "secret_council"  # every solo player answers the SAME encounter in secret; contradictions collide
+
+
 SHARED_RESOURCE_KEYS = ("food", "money", "time", "supplies", "morale", "reputation", "vehicle")
 STATS = ("brawn", "brains", "charm", "sneak", "weird")
 
@@ -118,6 +132,8 @@ class GameSettings(BaseModel):
     allow_public_share: bool = True
     narrator_voice: str = "storyteller"
     auto_advance: bool = True  # automatically move on when timers expire
+    # How often the Ridiculous Encounter Engine interrupts a scene: off | occasional | normal | heartbeat
+    encounter_frequency: Literal["off", "occasional", "normal", "heartbeat"] = "normal"
 
 
 class AudioPreferences(BaseModel):
@@ -180,6 +196,9 @@ class PlayerStats(BaseModel):
     objective_progress: int = 0
     times_soloed: int = 0
     harmful_events_triggered: int = 0
+    encounters_faced: int = 0
+    encounter_wins: int = 0
+    contrarian_picks: int = 0  # gave a different answer from everyone else in a secret council
     npc_interactions: dict[str, int] = Field(default_factory=dict)
 
 
@@ -308,6 +327,8 @@ class Choice(BaseModel):
     cost: dict[str, int] = Field(default_factory=dict)  # shared resource key -> amount
     target_npc_id: str | None = None
     advances_objective: bool = False
+    style: str = ""  # encounter response persona, e.g. "The Diplomat"
+    encounter_option: str | None = None  # key of the EncounterOption this choice answers with
 
 
 class ActionInterpretation(BaseModel):
@@ -370,6 +391,91 @@ class DecisionGroup(BaseModel):
     submissions: dict[str, Submission] = Field(default_factory=dict)
     resolution: list[ResolvedAction] = Field(default_factory=list)
     resolved: bool = False
+    encounter_id: str | None = None  # set when this group faces a Ridiculous Encounter
+
+
+# ---------------------------------------------------------------------------
+# Ridiculous encounters
+# ---------------------------------------------------------------------------
+
+
+class EncounterEffect(BaseModel):
+    """What answering an encounter does to the world. Applied only by the engine, after the roll."""
+
+    resources: dict[str, int] = Field(default_factory=dict)  # shared resource key -> delta (clamped to ±2)
+    npc_disposition: int = 0  # the encounter NPC's opinion of the party (clamped to ±2)
+    item: str = ""  # a strange item handed to the lead responder
+    obligation: str = ""  # an unexpected obligation that comes due two scenes later
+    obligation_cost: dict[str, int] = Field(default_factory=dict)
+    secret: str = ""  # a hidden consequence only the responders learn (revealed at the end)
+    location: str = ""  # a brand-new location that now exists because of you
+    title: str = ""  # an honorific the responders are now stuck with
+
+
+class EncounterOption(BaseModel):
+    key: str
+    style: str  # "The Diplomat", "The Chaos Agent", …
+    label: str  # what you actually do
+    teaser: str  # "Potential outcome: …" shown to players before they commit
+    tags: list[str] = Field(default_factory=list)
+    stat: str = "charm"
+    risk: Risk = Risk.RISKY
+    advances_objective: bool = False
+    aftermath: str = ""  # how the NPC remembers this answer when they come back ("…has appointed you Keeper of the Gym Calendar")
+    win: EncounterEffect = Field(default_factory=EncounterEffect)
+    lose: EncounterEffect = Field(default_factory=EncounterEffect)
+
+
+class Encounter(BaseModel):
+    id: str = Field(default_factory=lambda: new_id("enc_"))
+    key: str  # library key, "gen:<hash>" for generated, "callback:<key>" for a returning NPC
+    category: EncounterCategory
+    title: str
+    intro: str
+    question: str
+    npc_name: str
+    npc_emoji: str = "🧑"
+    npc_personality: str = ""
+    npc_id: str | None = None
+    options: list[EncounterOption]
+    mode: EncounterMode = EncounterMode.INDIVIDUAL
+    source: str = "library"  # library | generated | callback
+    callback_of: str | None = None  # encounter id this one calls back to
+    round: int = 0
+    group_ids: list[str] = Field(default_factory=list)
+    started_at: float = Field(default_factory=now)
+
+    def option(self, key: str | None) -> EncounterOption | None:
+        return next((o for o in self.options if o.key == key), None)
+
+
+class EncounterRecord(BaseModel):
+    """Persistent encounter memory: what was asked, who answered what, and what it led to."""
+
+    encounter_id: str
+    key: str
+    title: str
+    category: EncounterCategory
+    mode: EncounterMode
+    source: str
+    round: int
+    npc_id: str | None = None
+    npc_name: str = ""
+    player_ids: list[str] = Field(default_factory=list)
+    options_offered: int = 0
+    selections: dict[str, str] = Field(default_factory=dict)  # player -> option key | "freeform" | "auto:<key>"
+    outcomes: dict[str, str] = Field(default_factory=dict)  # option key -> tier of the action that carried it
+    winning_option: str | None = None
+    aftermath: str = ""  # the line a callback remembers
+    consequences: list[str] = Field(default_factory=list)
+    distinct_choices: int = 0
+    choice_diversity: float = 0.0  # normalised entropy of selections, 0 (unanimous) .. 1 (everyone different)
+    council_verdict: str = ""  # secret councils only: what the NPC concluded after comparing notes (public)
+    callback_of: str | None = None
+    called_back: bool = False
+    started_at: float = 0.0
+    resolved_at: float = Field(default_factory=now)
+    event_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -440,6 +546,7 @@ class DelayedConsequence(BaseModel):
     health_change: int = 0
     source_event_id: str | None = None
     fired: bool = False
+    kind: str = "consequence"  # consequence | obligation (an encounter answer that comes due later)
 
 
 class ActiveEvent(BaseModel):
@@ -565,6 +672,8 @@ class GameState(BaseModel):
     delayed_consequences: list[DelayedConsequence] = Field(default_factory=list)
     memory: StoryMemory = Field(default_factory=StoryMemory)
     chat: list[ChatMessage] = Field(default_factory=list)
+    encounters: dict[str, Encounter] = Field(default_factory=dict)
+    encounter_history: list[EncounterRecord] = Field(default_factory=list)
 
     random_seed: int = 0
     turn_number: int = 0

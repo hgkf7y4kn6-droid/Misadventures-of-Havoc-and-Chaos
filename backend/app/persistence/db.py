@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Integer, String, Text, select
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from ..engine import encounters
 from ..models.game import GameState, Phase
+
+log = logging.getLogger("havoc.persistence")
 
 
 class Base(DeclarativeBase):
@@ -50,6 +54,16 @@ class CompletedAdventureRow(Base):
     completed_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class EncounterStatRow(Base):
+    """Cross-game performance of library encounters: are tables splitting their answers, or picking the obvious one?"""
+
+    __tablename__ = "encounter_stats"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    plays: Mapped[int] = mapped_column(Integer, default=0)
+    diversity_total: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class Repository:
     def __init__(self, url: str):
         self.engine: AsyncEngine = create_async_engine(url, future=True)
@@ -58,6 +72,10 @@ class Repository:
     async def init(self) -> None:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        try:
+            encounters.note_library_stats(await self.encounter_stats())
+        except Exception:  # noqa: BLE001 - selection weights are an optimisation, never a reason to fail start-up
+            log.warning("could not load encounter library stats", exc_info=True)
 
     async def close(self) -> None:
         await self.engine.dispose()
@@ -110,6 +128,18 @@ class Repository:
             row.allow_share = state.settings.allow_public_share
             row.completed_at = utcnow()
             s.add(row)
+            for key, diversity in encounters.library_rows(state):
+                stat = await s.get(EncounterStatRow, key) or EncounterStatRow(key=key, plays=0, diversity_total=0.0)
+                stat.plays = (stat.plays or 0) + 1
+                stat.diversity_total = (stat.diversity_total or 0.0) + diversity
+                s.add(stat)
+                plays, total = stat.plays, stat.diversity_total
+                encounters.note_library_stats({key: (plays, total / plays)})
+
+    async def encounter_stats(self) -> dict[str, tuple[int, float]]:
+        async with self.sessions() as s:
+            rows = await s.execute(select(EncounterStatRow))
+            return {r.key: (r.plays, r.diversity_total / r.plays if r.plays else 0.0) for r in rows.scalars()}
 
     async def get_by_share(self, share_id: str) -> CompletedAdventureRow | None:
         async with self.sessions() as s:

@@ -129,6 +129,12 @@ function HostSettings({ view, send }: { view: GameView; send: Send }) {
             <option value="open">Director decides (open by default)</option><option value="disabled">No chat at all</option>
           </select>
         </label>
+        <label className="font-semibold">Ridiculous encounters
+          <select className="input mt-1" value={s.encounter_frequency ?? "normal"} onChange={(e) => set({ encounter_frequency: e.target.value })}>
+            <option value="heartbeat">Every scene (maximum chaos)</option><option value="normal">Most scenes (recommended)</option>
+            <option value="occasional">Occasionally</option><option value="off">Off — just the adventure</option>
+          </select>
+        </label>
         <label className="font-semibold">Narrator voice
           <select className="input mt-1" value={s.narrator_voice} onChange={(e) => set({ narrator_voice: e.target.value })}>
             {["storyteller", "comedic", "dramatic", "chaotic", "deadpan"].map((v) => <option key={v}>{v}</option>)}

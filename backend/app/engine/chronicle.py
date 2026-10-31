@@ -81,7 +81,7 @@ def filter_events(events: list[AdventureEvent]) -> list[AdventureEvent]:
     for ev in events:
         if ev.visibility == Visibility.NEVER_REVEAL:
             continue
-        if ev.importance < 2 and ev.event_type not in ("action", "random_event", "outcome", "final_action"):
+        if ev.importance < 2 and ev.event_type not in ("action", "random_event", "outcome", "final_action", "encounter"):
             continue
         out.append(ev)
     return out
@@ -163,6 +163,11 @@ def _epilogue_facts(state: GameState, pid: str) -> list[str]:
         facts.append("discovered a hidden truth")
     if p.inventory:
         facts.append("ended up holding: " + ", ".join(i.name for i in p.inventory))
+    titles = state.world_state.get("titles", {}).get(pid, [])
+    if titles:
+        facts.append("is now officially known as " + " and ".join(f"'{t}'" for t in titles))
+    if s.encounters_faced:
+        facts.append(f"answered {s.encounters_faced} ridiculous question(s) and situation(s)")
     return facts
 
 
@@ -367,7 +372,7 @@ def _round_paragraphs(state: GameState, events: list[AdventureEvent], seed: int,
             paras.append(_clean(ev.narrative_summary or ev.public_information, state))
         elif ev.event_type == "scene" and opening:
             paras.append(_clean(ev.narrative_summary, state))
-        elif ev.event_type in ("random_event", "delayed_consequence", "npc_introduced"):
+        elif ev.event_type in ("random_event", "delayed_consequence", "npc_introduced", "encounter"):
             body = _clean(ev.narrative_summary, state)
             paras.append(rng.pick(seed, REVEAL, "rev", ev.event_id) + " " + lower_first(body) if ev.visibility != Visibility.PUBLIC else body)
         elif ev.event_type in ("action", "final_action", "group_action"):

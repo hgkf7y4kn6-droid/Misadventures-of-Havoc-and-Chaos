@@ -18,7 +18,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from ..config import GAME_TITLE, Settings
-from ..llm.safety import clean_text, defang, looks_like_injection
+from ..llm.safety import clean_text, defang, looks_like_injection, moderate
 from ..llm.services import DecisionSpec, LLMService, NarrationRequest, chapters_from_llm
 from ..models import events as ev
 from ..models.events import RealtimeEvent as E
@@ -30,6 +30,7 @@ from ..models.game import (
     CommMode,
     DecisionGroup,
     DecisionKind,
+    EncounterMode,
     FinalStory,
     GameOutcomeKind,
     GameSettings,
@@ -49,7 +50,7 @@ from ..models.game import (
     Visibility,
     now,
 )
-from . import achievements, chronicle, director, procgen, rng
+from . import achievements, chronicle, director, encounters, procgen, rng
 from .resolution import (
     SUCCESSES,
     ActionOutcome,
@@ -270,7 +271,7 @@ class GameManager:
         data = s.model_dump()
         allowed = {"max_players", "adventure_length", "theme_submission_seconds", "theme_voting_seconds",
                    "character_creation_seconds", "decision_seconds", "default_comm_mode", "allow_public_share",
-                   "narrator_voice", "auto_advance", "min_players"}
+                   "narrator_voice", "auto_advance", "min_players", "encounter_frequency"}
         for k, v in raw.items():
             if k in allowed:
                 data[k] = v
@@ -442,6 +443,9 @@ class GameManager:
             text = clean_text(msg.text, 200)
             if len(text) < 3:
                 raise GameError("That theme is a little too short.")
+            text = moderate(text) or ""
+            if not text:
+                raise GameError("Let's keep it family-friendly — pitch something else.")
             self.state.theme_submissions[p.id] = ThemeSubmission(player_id=p.id, text=defang(text))
             await self._commit()
         await self.emit(E.THEME_SUBMITTED, {"player_id": p.id})
@@ -551,6 +555,11 @@ class GameManager:
             self._require_phase(Phase.CHARACTER_CREATION, Phase.OBJECTIVE_REVEAL)
             fields = {k: clean_text(getattr(msg, k), 200) for k in (
                 "name", "archetype", "personality", "special_ability", "weakness", "secret_motivation", "starting_item", "humorous_trait")}
+            for k, v in fields.items():
+                safe = moderate(v)
+                if safe is None:
+                    raise GameError(f"Let's keep the character family-friendly (check their {k.replace('_', ' ')}).")
+                fields[k] = safe
             ch = Character(**fields, avatar=clean_text(msg.avatar, 8) or p.character.avatar, color=p.character.color, complete=True)
             ch.name = ch.name or p.name
             ch.stats = self._validate_stats(msg.stats) or procgen.default_stats_for(ch.archetype, ch.special_ability)
@@ -637,9 +646,12 @@ class GameManager:
             if not dc.fired and dc.trigger_round <= rnd:
                 dc.fired = True
                 changes = {k: change_shared(s, k, v) for k, v in dc.resource_changes.items()}
-                text = f"Remember {dc.description.split(' comes back')[0]}? It comes back to haunt everyone. " + ", ".join(
-                    describe_delta(s, k, v) for k, v in changes.items() if v)
-                self._system(text, "Consequences Arrive", kind="event")
+                effects = ", ".join(describe_delta(s, k, v) for k, v in changes.items() if v)
+                if dc.kind == "obligation":
+                    text = f"An obligation comes due: {dc.description}. " + (f"({effects})" if effects else "Luckily, it costs nothing — this time.")
+                else:
+                    text = f"Remember {dc.description.split(' comes back')[0]}? It comes back to haunt everyone. " + effects
+                self._system(text, "An Obligation Comes Due" if dc.kind == "obligation" else "Consequences Arrive", kind="event")
                 cause = next((e for e in reversed(s.adventure_chronicle) if set(dc.player_ids) <= set(e.player_ids)
                               and e.event_type in ("action", "group_action")), None)
                 chronicle.record(s, "delayed_consequence", player_ids=dc.player_ids, importance=3, resource_changes=changes,
@@ -686,6 +698,10 @@ class GameManager:
             if re_.resource_changes:
                 await self.emit(E.RESOURCE_CHANGED, {"changes": re_.resource_changes, "reason": re_.title})
 
+        # Ridiculous encounter: the Encounter Director picks who gets interrupted, and how they answer.
+        enc_plan = encounters.plan(s, plan)
+        enc_idx = set(enc_plan.group_indexes) if enc_plan else set()
+
         # Decision groups
         specs, groups = [], []
         indiv = rng.shuffled(seed, procgen.individual_situations(ctx), "indiv", rnd)
@@ -724,12 +740,36 @@ class GameManager:
                               title=stitle, shared_context=scontext, available_choices=choices, deadline=deadline,
                               comm_mode=plan.comm_mode)
             groups.append(g)
+            if gi in enc_idx:
+                continue  # this group's situation is the encounter; no generic decision needed
             specs.append(DecisionSpec(
                 group_id=g.group_id, kind=kind.value, player_names=[s.players[p].display for p in members],
                 location=loc.name if loc else "", authorized_context=authorized_context(s, list(members)),
                 fallback_title=stitle, fallback_context=scontext, fallback_choices=choices))
-        generated = await self.llm.decision_generator.generate(plan.beat, specs)
+        enc_groups = [groups[i] for i in sorted(enc_idx)]
+        enc_ctx = dict(ctx)
+        if enc_groups and enc_groups[0].location_id in s.locations:
+            enc_ctx["loc"] = s.locations[enc_groups[0].location_id].name
+
+        async def no_encounter() -> None:
+            return None
+
+        enc_coro = (self.llm.encounter_generator.generate(enc_plan.category.value, enc_plan.mechanism, enc_ctx, public_context(s),
+                                                          [r.title for r in s.encounter_history], enc_plan.mode.value)
+                    if enc_plan and not enc_plan.callback else no_encounter())
+        generated, generated_enc = await asyncio.gather(self.llm.decision_generator.generate(plan.beat, specs), enc_coro)
+        enc = None
+        if enc_plan:
+            if enc_plan.callback:
+                enc = encounters.build_callback(s, enc_plan.callback, enc_ctx)
+            else:
+                enc = generated_enc or encounters.from_library(enc_plan.template_key, enc_ctx)
+            encounters.open_encounter(s, enc, enc_groups, enc_plan.mode)
         for g in groups:
+            if g.encounter_id:
+                s.pending_decisions[g.group_id] = g
+                round_obj.group_ids.append(g.group_id)
+                continue
             t, c, ch = generated[g.group_id]
             if self.llm.provider is not None:
                 # keep the planted hunch even when the LLM rewrites the choices
@@ -739,8 +779,23 @@ class GameManager:
             s.pending_decisions[g.group_id] = g
             round_obj.group_ids.append(g.group_id)
 
+        if enc:
+            members = [pid for g in enc_groups for pid in g.player_ids]
+            everyone = set(members) >= {p.id for p in s.active_players()}
+            public = enc.mode == EncounterMode.COUNCIL or everyone
+            vis = Visibility.PUBLIC if public else (Visibility.GROUP if len(members) > 1 else Visibility.PRIVATE)
+            cat = encounters.category_label(enc.category)
+            self._system(enc.intro, f"{encounters.category_emoji(enc.category)} {cat}: {enc.title}", vis,
+                         [] if public else members, kind="encounter")
+            self.track("encounter_started", None, {"encounter_key": enc.key, "category": enc.category.value, "mode": enc.mode.value,
+                                                   "source": enc.source, "round": rnd, "responders": len(members),
+                                                   "options_offered": len(enc.options), "is_callback": bool(enc.callback_of)})
+
         self._enter(Phase.ADVENTURE, s.settings.decision_seconds)
         await self.emit(E.SCENE_STARTED, {"round": rnd, "title": title, "beat": plan.beat, "comm_mode": plan.comm_mode})
+        if enc:
+            await self.emit(E.ENCOUNTER_STARTED, {"encounter_id": enc.id, "title": enc.title, "category": enc.category.value,
+                                                  "mode": enc.mode.value}, audience=[pid for g in enc_groups for pid in g.player_ids])
         for g in groups:
             if g.kind == DecisionKind.GROUP:
                 await self.emit(E.GROUP_FORMED, {"group_id": g.group_id, "player_ids": g.player_ids}, audience=g.player_ids)
@@ -796,6 +851,11 @@ class GameManager:
             if msg.choice_id and msg.choice_id not in {c.id for c in g.available_choices}:
                 raise GameError("Unknown choice.")
             freeform = clean_text(msg.freeform or "", 300)
+            if freeform:
+                safe = moderate(freeform)
+                if safe is None:
+                    raise GameError("Let's keep it family-friendly — try a different idea.")
+                freeform = safe
             if not msg.choice_id and not freeform:
                 raise GameError("Pick a choice or describe what you do.")
             if freeform and not g.allow_freeform:
@@ -844,7 +904,7 @@ class GameManager:
         c = next(c for c in g.available_choices if c.id == sub.choice_id)
         desc = c.label if not sub.auto else f"{c.label} (after hesitating so long the decision made itself)"
         return PlannedAction(key=f"{g.group_id}:{p.id}", group_id=g.group_id, player_ids=[p.id], description=desc,
-                             tags=c.tags, risk=c.risk, stat=c.stat, cost=dict(c.cost), target_npc_id=c.target_npc_id,
+                             choice_id=c.id, tags=c.tags, risk=c.risk, stat=c.stat, cost=dict(c.cost), target_npc_id=c.target_npc_id,
                              advances_objective=c.advances_objective, push_luck=[p.id] if sub.push_luck else [],
                              use_ability=[p.id] if sub.use_ability else [], item_ids={p.id: sub.item_id} if sub.item_id else {},
                              location_id=g.location_id, final=g.kind == DecisionKind.FINAL)
@@ -913,6 +973,8 @@ class GameManager:
         escalation = rnd.escalation if rnd else 1
         resolution = resolve_round(s, actions, escalation + (1 if is_final else 0))
         outcomes = resolution.outcomes
+        # Encounter answers have consequences of their own; the engine applies them now so they get narrated.
+        enc_records = encounters.apply_outcomes(s, groups, outcomes) if not is_final else []
 
         # Narrate per audience — each call sees only what that audience may know.
         narr: dict[str, str] = {}
@@ -995,6 +1057,21 @@ class GameManager:
             if se and de:
                 if se not in by_id[de].related_events:
                     by_id[de].related_events.append(se)
+
+        if enc_records:
+            encounters.chronicle_records(s, enc_records, key_to_event, groups)
+            for rec in enc_records:
+                enc = s.encounters[rec.encounter_id]
+                if enc.mode == EncounterMode.COUNCIL:
+                    verdict = rec.council_verdict
+                    self._system(encounters.council_reveal(s, enc, rec) + (f" Verdict: {verdict}." if verdict else ""),
+                                 f"{enc.npc_emoji} The Council Compares Notes", kind="encounter")
+                self.track("encounter_resolved", None, encounters.analytics_props(s, rec))
+                await self.emit(E.ENCOUNTER_RESOLVED, {"encounter_id": rec.encounter_id, "title": rec.title,
+                                                       "winning_option": rec.winning_option}, audience=rec.player_ids)
+                npc = s.npcs.get(rec.npc_id or "")
+                if npc:
+                    await self.emit(E.NPC_UPDATED, {"npc_id": npc.id, "disposition": npc.disposition}, audience=npc.known_by)
 
         if is_final:
             await self._conclude_final(outcomes)

@@ -6,7 +6,7 @@ export function Logo({ size = "lg" }: { size?: "sm" | "lg" }) {
   if (size === "sm") {
     return (
       <a href="/" className="font-display text-xl leading-none text-zap no-underline" aria-label="The Misadventures of Havoc and Chaos — home">
-        <span className="text-sky-300">The Misadventures of</span>{" "}
+        <span className="text-butter">The Misadventures of</span>{" "}
         <span className="text-havoc">Havoc</span> <span className="text-white">&amp;</span> <span className="text-chaos">Chaos</span>
       </a>
     );

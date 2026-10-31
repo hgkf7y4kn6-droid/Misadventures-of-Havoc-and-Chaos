@@ -28,7 +28,7 @@ export function Adventure({ view, send }: { view: GameView; send: Send }) {
           {!view.decisions.length && (
             <Panel>
               <p className="font-display text-2xl text-zap">{final ? "Bracing for impact…" : "The dust settles…"}</p>
-              <p className="text-violet-200">Read what happened below. The Director will move things along shortly.</p>
+              <p className="text-cream">Read what happened below. The Director will move things along shortly.</p>
               {view.me.id === view.host_id && (
                 <button className="btn btn-havoc mt-2" onClick={() => send({ action: "close_phase" })}>Continue to the next scene</button>
               )}
@@ -55,7 +55,7 @@ function SceneHeader({ view }: { view: GameView }) {
   return (
     <div className="flex flex-wrap items-center gap-3 justify-between">
       <div>
-        <div className="text-sm text-violet-300 font-semibold">
+        <div className="text-sm text-muted font-semibold">
           {view.phase === "final_challenge" ? "THE FINAL CHALLENGE" : `SCENE ${view.turn_number} OF ${view.total_rounds}`}{r ? ` · ${r.beat.replace(/_/g, " ")}` : ""}
         </div>
         <h2 className="font-display text-4xl sm:text-5xl text-zap -rotate-1 drop-shadow-[3px_3px_0_#000]">{r?.title ?? "…"}</h2>
@@ -109,7 +109,7 @@ function DecisionPanel({ view, decision: d, send }: { view: GameView; decision: 
             {c.description && <div className="text-sm opacity-80">{c.description}</div>}
             <div className="flex gap-1 flex-wrap mt-1 text-xs font-bold">
               <span className={`rounded px-1.5 py-0.5 border-2 border-black ${RISK_STYLE[c.risk]}`}>{c.risk.toUpperCase()}</span>
-              <span className="rounded px-1.5 py-0.5 border-2 border-black bg-violet-200">{c.stat}</span>
+              <span className="rounded px-1.5 py-0.5 border-2 border-black bg-butter">{c.stat}</span>
               {Object.entries(c.cost).map(([k, v]) => <span key={k} className="rounded px-1.5 py-0.5 border-2 border-black bg-orange-200">-{v} {view.shared_resources[k]?.label ?? k}</span>)}
               {c.advances_objective && <span className="rounded px-1.5 py-0.5 border-2 border-black bg-emerald-200">🎯 objective</span>}
             </div>
@@ -184,7 +184,7 @@ function ObjectivePanel({ view }: { view: GameView }) {
   return (
     <Panel title="🎯 Objective">
       <p className="font-bold">{o.title}</p>
-      <p className="text-sm text-violet-200">{o.description}</p>
+      <p className="text-sm text-cream">{o.description}</p>
       <div className="mt-2" role="progressbar" aria-valuenow={view.objective_progress} aria-valuemin={0} aria-valuemax={o.progress_target} aria-label="Objective progress">
         <div className="h-4 rounded-full bg-black/40 border-2 border-black overflow-hidden"><div className="h-full bg-slime transition-all" style={{ width: `${pct}%` }} /></div>
         <div className="text-xs mt-1">Progress {view.objective_progress}/{o.progress_target}</div>
@@ -220,7 +220,7 @@ function MePanel({ view }: { view: GameView }) {
   const r = me.resources;
   return (
     <Panel title={<span className="flex items-center gap-2"><Avatar p={me} size={34} /> {me.character.name}</span>}>
-      <p className="text-sm text-violet-200">{me.character.archetype}</p>
+      <p className="text-sm text-cream">{me.character.archetype}</p>
       <div className="grid grid-cols-4 gap-2 my-2 text-center">
         <Stat label="Health" value={`${r.health}/10`} warn={r.health <= 3} emoji="❤️" />
         <Stat label="Luck" value={r.luck} emoji="🍀" />
@@ -252,7 +252,7 @@ function SecretsPanel({ view }: { view: GameView }) {
   if (!items.length && !view.npcs.length) return null;
   return (
     <Panel title="🤫 What Only You Know">
-      {items.length === 0 && <p className="text-sm text-violet-300">Nothing yet. Go poke something.</p>}
+      {items.length === 0 && <p className="text-sm text-muted">Nothing yet. Go poke something.</p>}
       <ul className="space-y-2">
         {items.slice().reverse().map((i) => (
           <li key={i.id} className={`rounded-lg p-2 ${i.visibility === "group" ? "bg-sky/15" : "bg-zap/15"}`}>
@@ -282,7 +282,7 @@ function PartyPanel({ view }: { view: GameView }) {
         {view.players.map((p) => (
           <li key={p.id} className={`flex items-center gap-2 ${p.status !== "active" ? "opacity-50" : ""}`}>
             <Avatar p={p} size={28} />
-            <span className="flex-1 text-sm"><b>{p.character.name || p.name}</b> <span className="text-violet-300">({p.name})</span></span>
+            <span className="flex-1 text-sm"><b>{p.character.name || p.name}</b> <span className="text-muted">({p.name})</span></span>
             <span className="text-sm">❤️ {p.health}</span>
             {p.status === "incapacitated" && <span title="Knocked out">💫</span>}
             {!p.connected && <span title="Disconnected">📴</span>}
@@ -332,10 +332,10 @@ function ChatPanel({ view, send }: { view: GameView; send: Send }) {
         ))}
       </div>
       <div className="h-48 overflow-y-auto bg-black/30 rounded-lg p-2 text-sm space-y-1" aria-live="polite">
-        {msgs.length === 0 && <p className="text-violet-400 italic">No messages.</p>}
+        {msgs.length === 0 && <p className="text-muted italic">No messages.</p>}
         {msgs.map((m) => (
           <p key={m.id}><b style={{ color: view.players.find((p) => p.id === m.sender_id)?.character.color }}>{m.sender_name}</b>
-            {m.channel.startsWith("dm:") && <span className="text-xs text-violet-300"> → {m.audience.filter((a) => a !== m.sender_id).map((a) => view.players.find((p) => p.id === a)?.name).join(", ")}</span>}
+            {m.channel.startsWith("dm:") && <span className="text-xs text-muted"> → {m.audience.filter((a) => a !== m.sender_id).map((a) => view.players.find((p) => p.id === a)?.name).join(", ")}</span>}
             : {m.text}</p>
         ))}
         <div ref={end} />
@@ -353,7 +353,7 @@ function ChatPanel({ view, send }: { view: GameView; send: Send }) {
             <button className="btn btn-havoc px-3 py-1">Send</button>
           </div>
         </form>
-      ) : <p className="mt-2 text-sm text-violet-300">{COMM_LABEL[mode]}</p>}
+      ) : <p className="mt-2 text-sm text-muted">{COMM_LABEL[mode]}</p>}
     </Panel>
   );
 }

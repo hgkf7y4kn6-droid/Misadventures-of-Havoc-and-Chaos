@@ -179,10 +179,10 @@ export function CharacterCreation({ view, send, suggestion, clearSuggestion }: {
               </li>
             ))}
           </ul>
-          <p className="text-sm text-violet-300 mt-3">Anyone who runs out of time gets a character assigned by the universe.</p>
+          <p className="text-sm text-muted mt-3">Anyone who runs out of time gets a character assigned by the universe.</p>
           {view.me.id === view.host_id && <button className="btn btn-ghost text-sm mt-2" onClick={() => send({ action: "close_phase" })}>Start the adventure now</button>}
         </Panel>
-        {view.objective && <Panel title="🎯 The Objective"><p className="font-bold">{view.objective.title}</p><p className="text-sm text-violet-200">{view.objective.description}</p></Panel>}
+        {view.objective && <Panel title="🎯 The Objective"><p className="font-bold">{view.objective.title}</p><p className="text-sm text-cream">{view.objective.description}</p></Panel>}
       </div>
     </div>
   );

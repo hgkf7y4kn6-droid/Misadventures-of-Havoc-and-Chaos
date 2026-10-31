@@ -5,17 +5,26 @@
 @import 'nativewind/theme';
 
 @theme {
-  /* Colors — The Misadventures of Havoc and Chaos */
-  --color-primary: #ff6b35; /* havoc orange */
-  --color-secondary: #ff3d8b; /* chaos pink */
-  --color-accent: #ffd23f; /* zap yellow */
-  --color-success: #8bea4d;
-  --color-info: #4dd8ff;
-  --color-ink: #1a1033; /* app background */
-  --color-ink-light: #251845; /* cards */
-  --color-ink-lighter: #33235c; /* raised surfaces */
-  --color-paper: #fff8e7;
-  --color-muted: #c4b5fd;
+  /* Colors — "Warm Riot": a comedy palette for The Misadventures of Havoc and Chaos.
+     Warm hues (orange, pink, yellow) dominate because they put players in a laughing mood;
+     neon fills sit against soft pastels for surprise and energy; one cool color is held back
+     for secrets and twists, so it reads as irony when it appears. */
+  --color-primary: #ff6a1f; /* havoc tangerine — fills, buttons, big moments */
+  --color-primary-deep: #e8540c; /* havoc text on paper (3.3:1, display sizes) */
+  --color-secondary: #ff3f8e; /* chaos bubblegum — fills, buttons */
+  --color-secondary-deep: #d81b6a; /* chaos text and links on paper (4.4:1) */
+  --color-accent: #ffd23f; /* zap sunshine — highlights, focus rings */
+  --color-success: #a8e63c; /* slime lime — wins, ready states */
+  --color-info: #4dd8ff; /* twist sky — the one cool color: secrets, sabotage, irony */
+  --color-ink: #2b0f1e; /* warm plum — dark background and text on paper */
+  --color-ink-light: #3d1830; /* cards */
+  --color-ink-lighter: #552241; /* raised surfaces */
+  --color-paper: #fff3d6; /* sunny cream — light background */
+  --color-cream: #fff1e3; /* text on dark */
+  --color-muted: #f0b9a6; /* secondary text on dark */
+  --color-peach: #ffc9a8; /* pastel surfaces */
+  --color-blush: #ffc2dc;
+  --color-butter: #fff0a3;
 
   /* Spacing — 4-point grid, named by size (p-md, gap-lg, …) */
   --spacing-xs: 4px;

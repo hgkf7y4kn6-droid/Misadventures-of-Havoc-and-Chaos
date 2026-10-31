@@ -1,18 +1,25 @@
 @import "tailwindcss";
 
+/* "Warm Riot" palette: warm hues dominate to prime players for laughs; neon fills against
+   pastel surfaces for surprise; sky is held back for secrets so it reads as a twist. */
 @theme {
   --font-display: "Bangers", Impact, "Arial Black", sans-serif;
   --font-body: "Nunito", system-ui, sans-serif;
   --font-type: "Special Elite", "Courier New", monospace;
-  --color-ink: #1a1033;
-  --color-ink-2: #251845;
-  --color-ink-3: #33235c;
-  --color-havoc: #ff6b35;
-  --color-chaos: #ff3d8b;
+  --color-ink: #2b0f1e; /* warm plum stage */
+  --color-ink-2: #3d1830;
+  --color-ink-3: #552241;
+  --color-havoc: #ff6a1f;
+  --color-chaos: #ff3f8e;
   --color-zap: #ffd23f;
-  --color-slime: #8bea4d;
-  --color-sky: #4dd8ff;
-  --color-paper: #fff8e7;
+  --color-slime: #a8e63c;
+  --color-sky: #4dd8ff; /* the one cool color: secrets and twists */
+  --color-paper: #fff3d6;
+  --color-cream: #fff1e3;
+  --color-muted: #f0b9a6;
+  --color-peach: #ffc9a8;
+  --color-blush: #ffc2dc;
+  --color-butter: #fff0a3;
 }
 
 :root { color-scheme: dark; }
@@ -22,11 +29,11 @@ body {
   font-family: var(--font-body);
   background-color: var(--color-ink);
   background-image:
-    radial-gradient(circle at 10% 10%, rgba(255, 61, 139, 0.18), transparent 40%),
-    radial-gradient(circle at 90% 30%, rgba(255, 107, 53, 0.14), transparent 45%),
-    radial-gradient(circle at 50% 100%, rgba(77, 216, 255, 0.12), transparent 50%);
+    radial-gradient(circle at 10% 10%, rgba(255, 63, 142, 0.20), transparent 40%),
+    radial-gradient(circle at 90% 30%, rgba(255, 106, 31, 0.18), transparent 45%),
+    radial-gradient(circle at 50% 100%, rgba(255, 210, 63, 0.12), transparent 50%);
   background-attachment: fixed;
-  color: #f3eefe;
+  color: var(--color-cream);
 }
 
 .sticker {
@@ -37,7 +44,7 @@ body {
 }
 .sticker-paper {
   background: var(--color-paper);
-  color: #241a3a;
+  color: var(--color-ink);
   border: 3px solid #000;
   border-radius: 1rem;
   box-shadow: 5px 5px 0 #000;
@@ -55,13 +62,13 @@ body {
 .btn:hover:not(:disabled) { transform: translate(-1px, -1px) rotate(-1deg); box-shadow: 6px 6px 0 #000; }
 .btn:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: 1px 1px 0 #000; }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-havoc { background: var(--color-havoc); color: #160b26; }
-.btn-chaos { background: var(--color-chaos); color: #fff; }
-.btn-zap { background: var(--color-zap); color: #160b26; }
+.btn-havoc { background: var(--color-havoc); color: var(--color-ink); }
+.btn-chaos { background: var(--color-chaos); color: var(--color-ink); }
+.btn-zap { background: var(--color-zap); color: var(--color-ink); }
 .btn-ghost { background: var(--color-ink-3); color: #fff; }
 .input {
   width: 100%;
-  background: #120a26;
+  background: #1f0a15;
   border: 3px solid #000;
   border-radius: 0.7rem;
   padding: 0.6rem 0.8rem;

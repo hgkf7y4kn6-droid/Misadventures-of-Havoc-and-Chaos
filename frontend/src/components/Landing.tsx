@@ -41,7 +41,7 @@ export function Landing({ initialCode = "" }: { initialCode?: string }) {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center gap-8 px-4 py-10">
       <Logo />
-      <p className="text-center text-lg max-w-xl text-violet-200">
+      <p className="text-center text-lg max-w-xl text-cream">
         Pitch a ridiculous premise. Make <strong className="text-zap">secret</strong> decisions. Watch an AI narrator turn everyone's
         terrible ideas into one shared legend — and find out at the end <em>what everyone else was doing</em>.
       </p>
@@ -79,7 +79,7 @@ export function Landing({ initialCode = "" }: { initialCode?: string }) {
         </form>
       </div>
       <div className="flex items-center gap-3"><AccountButton /></div>
-      <p className="text-sm text-violet-300">2–12 players · no account needed · narrated by an AI with poor judgment</p>
+      <p className="text-sm text-muted">2–12 players · no account needed · narrated by an AI with poor judgment</p>
     </main>
   );
 }

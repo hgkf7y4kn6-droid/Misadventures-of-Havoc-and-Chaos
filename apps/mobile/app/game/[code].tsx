@@ -161,7 +161,7 @@ function DecisionCard({ view, d, send }: { view: GameView; d: Decision; send: Se
       <T paper>{d.shared_context}</T>
       {d.available_choices.map((c) => (
         <Pressable key={c.id} accessibilityRole="radio" accessibilityState={{ checked: choice === c.id && !free }} onPress={() => { setChoice(c.id); setFree(""); }}
-          style={{ borderWidth: 3, borderRadius: 12, padding: 10, backgroundColor: choice === c.id && !free ? "#ffe2d4" : "#fff" }}>
+          style={{ borderWidth: 3, borderRadius: 12, padding: 10, backgroundColor: choice === c.id && !free ? C.peach : "#fff" }}>
           <Text style={{ fontWeight: "800", fontSize: 16 }}>{c.label}</Text>
           <Text style={{ fontSize: 12 }}>{c.risk.toUpperCase()} · {c.stat}{Object.entries(c.cost).map(([k, v]) => ` · -${v} ${view.shared_resources[k]?.label ?? k}`).join("")}</Text>
         </Pressable>

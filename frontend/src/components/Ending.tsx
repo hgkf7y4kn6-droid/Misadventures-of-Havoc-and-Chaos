@@ -51,7 +51,7 @@ export function Ending({ view, send, code }: { view: GameView; send: Send; code:
         <p className="font-display text-2xl text-sky">The Misadventures of Havoc and Chaos:</p>
         <h2 className="font-display text-5xl sm:text-7xl text-zap -rotate-2 drop-shadow-[5px_5px_0_#000]">The Complete Story</h2>
         <p className={`font-display text-4xl mt-4 ${style.color}`}>{style.emoji} {o.headline}</p>
-        <p className="max-w-2xl mx-auto mt-2 text-violet-100">{o.group_summary}</p>
+        <p className="max-w-2xl mx-auto mt-2 text-cream">{o.group_summary}</p>
       </header>
 
       <div className="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
@@ -98,7 +98,7 @@ export function Ending({ view, send, code }: { view: GameView; send: Send; code:
             <Panel title="🔓 Secrets Revealed">
               <ul className="space-y-2 text-sm">
                 {view.revealed.map((r, i) => (
-                  <li key={i} className="bg-black/25 rounded p-2"><b>{r.title}:</b> {r.text}{r.known_by.length > 0 && <span className="text-violet-300"> — known by {r.known_by.join(", ")}</span>}</li>
+                  <li key={i} className="bg-black/25 rounded p-2"><b>{r.title}:</b> {r.text}{r.known_by.length > 0 && <span className="text-muted"> — known by {r.known_by.join(", ")}</span>}</li>
                 ))}
               </ul>
             </Panel>
@@ -109,7 +109,7 @@ export function Ending({ view, send, code }: { view: GameView; send: Send; code:
               <button className="btn btn-ghost" onClick={async () => { track("story_downloaded", {}); location.assign(await client.storyTxtUrl(code)); }}>Download as text</button>
               {shareUrl ? (
                 <button className="btn btn-chaos" onClick={() => copy(shareUrl, "link")}>{copied === "link" ? "Link copied!" : "Copy read-only share link"}</button>
-              ) : <p className="text-sm text-violet-300">The host disabled public share links.</p>}
+              ) : <p className="text-sm text-muted">The host disabled public share links.</p>}
               {isHost && <button className="btn btn-havoc text-xl mt-2" onClick={() => send({ action: "restart_game" })}>Play again (same party)</button>}
             </div>
           </Panel>
@@ -177,7 +177,7 @@ function ReadAloud({ view, send, code, chapters, title }: { view: GameView; send
           <div className="mt-3">
             <div className="flex justify-between text-sm font-semibold">
               <span aria-live="polite">Chapter {state.chapter + 1} of {total}{state.status === "loading" ? " · loading narration…" : ""}</span>
-              {server && <span className="text-violet-300">{ready.length}/{total} chapters narrated</span>}
+              {server && <span className="text-muted">{ready.length}/{total} chapters narrated</span>}
             </div>
             <div className="h-4 rounded-full bg-black/40 border-2 border-black overflow-hidden mt-1" role="progressbar" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100} aria-label="Story playback progress">
               <div className="h-full bg-havoc transition-all" style={{ width: `${progress}%` }} />
@@ -192,9 +192,9 @@ function ReadAloud({ view, send, code, chapters, title }: { view: GameView; send
             </ol>
           </div>
           {state.error && <p className="text-chaos mt-2" role="alert">{state.error}</p>}
-          <p className="text-xs text-violet-300 mt-2">Narration plays only for you. Everyone else controls their own.</p>
+          <p className="text-xs text-muted mt-2">Narration plays only for you. Everyone else controls their own.</p>
         </>
-      ) : <p className="mt-2 text-violet-200">Narration is off. Read silently below — it won't start again unless you turn it back on.</p>}
+      ) : <p className="mt-2 text-cream">Narration is off. Read silently below — it won't start again unless you turn it back on.</p>}
     </section>
   );
 }

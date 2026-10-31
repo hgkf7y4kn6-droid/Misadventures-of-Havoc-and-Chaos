@@ -7,11 +7,11 @@ export default function HomeScreen() {
   return (
     <SafeAreaView className="flex-1 bg-paper">
       <View className="flex-1 items-center justify-center gap-md px-md">
-        <Text className="text-5xl text-primary font-sans-extrabold">Home</Text>
+        <Text className="text-5xl text-primary-deep font-sans-extrabold">Home</Text>
         <Text className="text-center text-lg text-ink font-sans-regular">
           Secret decisions. Shared disasters. One legend.
         </Text>
-        <Link href="/explore" className="mt-4 text-lg text-secondary font-sans-bold">
+        <Link href="/explore" className="mt-4 text-lg text-secondary-deep font-sans-bold">
           Explore →
         </Link>
       </View>

@@ -13,7 +13,7 @@ const config: ExpoConfig = {
   orientation: "portrait",
   icon: "./assets/icon.png",
   userInterfaceStyle: "dark",
-  backgroundColor: "#1a1033",
+  backgroundColor: "#2b0f1e",
   runtimeVersion: { policy: "appVersion" },
   updates: process.env.EAS_PROJECT_ID ? { url: `https://u.expo.dev/${process.env.EAS_PROJECT_ID}` } : undefined,
   ios: {
@@ -24,7 +24,7 @@ const config: ExpoConfig = {
   android: {
     package: `com.havocandchaos.app${suffix}`,
     adaptiveIcon: {
-      backgroundColor: "#1a1033",
+      backgroundColor: "#2b0f1e",
       foregroundImage: "./assets/android-icon-foreground.png",
       backgroundImage: "./assets/android-icon-background.png",
       monochromeImage: "./assets/android-icon-monochrome.png",

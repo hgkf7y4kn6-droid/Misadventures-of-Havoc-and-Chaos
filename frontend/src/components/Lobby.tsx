@@ -28,12 +28,12 @@ export function Lobby({ view, send }: { view: GameView; send: Send }) {
     <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr] max-w-6xl mx-auto">
       <div className="flex flex-col gap-5">
         <Panel title="Gather the Party">
-          <p className="text-violet-200">Share this code. Everyone joins on their own device.</p>
+          <p className="text-cream">Share this code. Everyone joins on their own device.</p>
           <div className="my-3 flex items-center gap-3 flex-wrap">
             <span className="font-display text-6xl tracking-[0.25em] text-zap drop-shadow-[3px_3px_0_#000]" aria-label={`Game code ${view.code.split("").join(" ")}`}>{view.code}</span>
             <button className="btn btn-zap" onClick={share}>{copied ? "Link copied!" : "Share link"}</button>
           </div>
-          <p className="text-sm text-violet-300 break-all">{link}</p>
+          <p className="text-sm text-muted break-all">{link}</p>
         </Panel>
 
         <Panel title="You">
@@ -41,7 +41,7 @@ export function Lobby({ view, send }: { view: GameView; send: Send }) {
             <Avatar p={me} size={56} />
             <div>
               <div className="font-display text-2xl">{me.name}</div>
-              <div className="text-violet-300 text-sm">{me.character.archetype || "Archetype: undecided (dangerously)"}</div>
+              <div className="text-muted text-sm">{me.character.archetype || "Archetype: undecided (dangerously)"}</div>
             </div>
           </div>
           <div className="flex flex-wrap gap-1 mb-2" role="group" aria-label="Pick an avatar">
@@ -62,7 +62,7 @@ export function Lobby({ view, send }: { view: GameView; send: Send }) {
             <input className="input" maxLength={80} value={archetype} onChange={(e) => setArchetype(e.target.value)} placeholder="Quick archetype idea (e.g. Overconfident Intern)" aria-label="Archetype idea" />
             <button className="btn btn-ghost">Save</button>
           </form>
-          <p className="text-xs text-violet-300 mt-2">You'll flesh out your full character once the objective is revealed.</p>
+          <p className="text-xs text-muted mt-2">You'll flesh out your full character once the objective is revealed.</p>
         </Panel>
       </div>
 
@@ -74,9 +74,9 @@ export function Lobby({ view, send }: { view: GameView; send: Send }) {
                 <Avatar p={p} />
                 <div className="flex-1 min-w-0">
                   <div className="font-bold truncate">{p.name} {p.is_host && <span className="text-zap text-sm">👑 host</span>} {p.id === me.id && <span className="text-sky text-sm">(you)</span>}</div>
-                  <div className="text-xs text-violet-300 truncate">{p.character.archetype || "—"} {p.connected ? "" : "· 📴 disconnected"}</div>
+                  <div className="text-xs text-muted truncate">{p.character.archetype || "—"} {p.connected ? "" : "· 📴 disconnected"}</div>
                 </div>
-                <span className={`font-display text-lg ${p.ready || p.is_host ? "text-slime" : "text-violet-400"}`}>{p.is_host ? "HOST" : p.ready ? "READY" : "…"}</span>
+                <span className={`font-display text-lg ${p.ready || p.is_host ? "text-slime" : "text-muted"}`}>{p.is_host ? "HOST" : p.ready ? "READY" : "…"}</span>
                 {isHost && p.id !== me.id && (
                   <button className="btn btn-ghost text-sm px-2 py-1" onClick={() => confirm(`Remove ${p.name}?`) && send({ action: "kick_player", player_id: p.id })} aria-label={`Remove ${p.name}`}>✕</button>
                 )}
@@ -99,7 +99,7 @@ export function Lobby({ view, send }: { view: GameView; send: Send }) {
 
         {isHost ? <HostSettings view={view} send={send} /> : (
           <Panel title="Settings">
-            <p className="text-violet-200">{view.settings.adventure_length} adventure · {view.settings.decision_seconds}s per decision · narrator: {view.settings.narrator_voice}</p>
+            <p className="text-cream">{view.settings.adventure_length} adventure · {view.settings.decision_seconds}s per decision · narrator: {view.settings.narrator_voice}</p>
           </Panel>
         )}
       </div>

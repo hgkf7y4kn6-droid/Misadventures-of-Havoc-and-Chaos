@@ -37,7 +37,7 @@ export function Game({ code }: { code: string }) {
         <Logo size="sm" />
         <div className="flex items-center gap-3 text-sm">
           {view && <span className="font-display text-lg text-zap tracking-widest" title="Game code">{view.code}</span>}
-          {view && <span className="hidden sm:inline text-violet-300">{PHASE_LABEL[view.phase]}</span>}
+          {view && <span className="hidden sm:inline text-muted">{PHASE_LABEL[view.phase]}</span>}
           <span className={`w-3 h-3 rounded-full ${conn === "open" ? "bg-slime" : "bg-chaos animate-pulse"}`} title={conn} aria-label={`Connection ${conn}`} />
         </div>
       </header>

@@ -5,7 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useTrack } from "../src/lib/analytics";
 import { AccountButton } from "../src/lib/auth";
 import { client } from "../src/lib/client";
-import { Button, C, Card, Input, T } from "../src/ui";
+import { Button, C, Card, F, Input, T } from "../src/ui";
 
 export default function Home() {
   const [name, setName] = useState("");
@@ -34,8 +34,8 @@ export default function Home() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: 20, gap: 18, flexGrow: 1, justifyContent: "center" }} keyboardShouldPersistTaps="handled">
           <View accessible accessibilityRole="header" accessibilityLabel="The Misadventures of Havoc and Chaos" style={{ alignItems: "center" }}>
-            <Text style={{ color: C.zap, fontSize: 22, fontWeight: "800", transform: [{ rotate: "-2deg" }] }}>The Misadventures of</Text>
-            <Text style={{ fontSize: 52, fontWeight: "900", transform: [{ rotate: "-3deg" }] }}>
+            <Text style={{ color: C.zap, fontFamily: F.comic, fontSize: 26, letterSpacing: 1, transform: [{ rotate: "-2deg" }] }}>The Misadventures of</Text>
+            <Text style={{ fontFamily: F.comic, fontSize: 60, letterSpacing: 1, transform: [{ rotate: "-3deg" }] }}>
               <Text style={{ color: C.havoc }}>Havoc</Text><Text style={{ color: "#fff" }}> & </Text><Text style={{ color: C.chaos }}>Chaos</Text>
             </Text>
           </View>
@@ -46,9 +46,9 @@ export default function Home() {
             <Button title="Start a Misadventure" onPress={() => void go("create")} busy={busy === "create"} />
             <T muted style={{ textAlign: "center" }}>— or join with a code —</T>
             <Input value={code} onChangeText={(v) => setCode(v.toUpperCase())} maxLength={6} placeholder="ABCDE" autoCapitalize="characters"
-              accessibilityLabel="Game code" style={{ letterSpacing: 6, fontSize: 24, textAlign: "center", fontWeight: "900" }} />
+              accessibilityLabel="Game code" style={{ letterSpacing: 6, fontSize: 26, textAlign: "center", fontFamily: F.comic }} />
             <Button tone="chaos" title="Join the Chaos" onPress={() => void go("join")} busy={busy === "join"} />
-            {error ? <Text accessibilityRole="alert" style={{ color: C.chaos, fontWeight: "700" }}>{error}</Text> : null}
+            {error ? <Text accessibilityRole="alert" style={{ color: C.chaos, fontFamily: F.bold }}>{error}</Text> : null}
           </Card>
           <AccountButton />
           <T muted style={{ textAlign: "center", fontSize: 13 }}>2–12 players · no account needed</T>

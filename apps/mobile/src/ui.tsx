@@ -7,6 +7,15 @@ export const C = {
   slime: "#a8e63c", sky: "#4dd8ff", paper: "#fff3d6", text: "#fff1e3", muted: "#f0b9a6", peach: "#ffc9a8",
 };
 
+/** Family names registered with useFonts in app/_layout.tsx. Static font files carry their own weight,
+ * so styles set fontFamily and leave fontWeight unset (otherwise iOS fakes the weight or falls back). */
+export const F = {
+  comic: "comic", // Bangers: titles, buttons, big moments. All caps, so keep lines short.
+  regular: "sans-regular", // Nunito: body text and the narrated story.
+  bold: "sans-bold",
+  extrabold: "sans-extrabold", // emphasis
+};
+
 const TONES = { havoc: C.havoc, chaos: C.chaos, zap: C.zap, ghost: C.ink3, slime: C.slime } as const;
 
 export function Button({ title, onPress, tone = "havoc", disabled, busy }: { title: string; onPress: () => void; tone?: keyof typeof TONES; disabled?: boolean; busy?: boolean }) {
@@ -32,11 +41,11 @@ export function Input(props: TextInputProps) {
 }
 
 export function T({ children, style, muted, paper }: { children: ReactNode; style?: object; muted?: boolean; paper?: boolean }) {
-  return <Text style={[{ color: paper ? C.ink : muted ? C.muted : C.text, fontSize: 16, lineHeight: 23 }, style]}>{children}</Text>;
+  return <Text style={[{ color: paper ? C.ink : muted ? C.muted : C.text, fontFamily: F.regular, fontSize: 16, lineHeight: 23 }, style]}>{children}</Text>;
 }
 
 export function H({ children, color = C.zap, size = 32 }: { children: ReactNode; color?: string; size?: number }) {
-  return <Text accessibilityRole="header" style={{ color, fontSize: size, fontWeight: "900", letterSpacing: 0.5, transform: [{ rotate: "-1.5deg" }] }}>{children}</Text>;
+  return <Text accessibilityRole="header" style={{ color, fontFamily: F.comic, fontSize: size, letterSpacing: 1, transform: [{ rotate: "-1.5deg" }] }}>{children}</Text>;
 }
 
 /** Accessible 0..1 control (adjustable role: VoiceOver/TalkBack swipe up/down). */
@@ -47,9 +56,9 @@ export function Stepper({ label, value, onChange, step = 0.1 }: { label: string;
       onAccessibilityAction={(e) => onChange(clamp(value + (e.nativeEvent.actionName === "increment" ? step : -step)))}
       accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
       style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-      <Text style={{ color: C.muted }}>{label}</Text>
+      <Text style={{ color: C.muted, fontFamily: F.regular }}>{label}</Text>
       <Button tone="ghost" title="−" onPress={() => onChange(clamp(value - step))} />
-      <Text style={{ color: C.text, fontWeight: "800", minWidth: 44, textAlign: "center" }}>{Math.round(value * 100)}%</Text>
+      <Text style={{ color: C.text, fontFamily: F.extrabold, minWidth: 44, textAlign: "center" }}>{Math.round(value * 100)}%</Text>
       <Button tone="ghost" title="+" onPress={() => onChange(clamp(value + step))} />
     </View>
   );
@@ -57,8 +66,8 @@ export function Stepper({ label, value, onChange, step = 0.1 }: { label: string;
 
 const s = StyleSheet.create({
   btn: { borderWidth: 3, borderColor: "#000", borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 4, height: 4 }, shadowOpacity: 1, shadowRadius: 0, elevation: 4 },
-  btnText: { fontWeight: "900", fontSize: 17, letterSpacing: 0.5 },
+  btnText: { fontFamily: F.comic, fontSize: 19, letterSpacing: 1 },
   card: { backgroundColor: C.ink2, borderWidth: 3, borderColor: "#000", borderRadius: 16, padding: 14, gap: 8, shadowColor: "#000", shadowOffset: { width: 5, height: 5 }, shadowOpacity: 1, shadowRadius: 0, elevation: 5 },
-  cardTitle: { color: C.text, fontSize: 22, fontWeight: "900" },
-  input: { backgroundColor: "#1f0a15", borderWidth: 3, borderColor: "#000", borderRadius: 12, padding: 12, color: "#fff", fontSize: 16 },
+  cardTitle: { color: C.text, fontFamily: F.comic, fontSize: 24, letterSpacing: 0.5 },
+  input: { backgroundColor: "#1f0a15", borderWidth: 3, borderColor: "#000", borderRadius: 12, padding: 12, color: "#fff", fontFamily: F.regular, fontSize: 16 },
 });

@@ -6,7 +6,7 @@ import { useTrack } from "../../src/lib/analytics";
 import { client } from "../../src/lib/client";
 import { useNarrator } from "../../src/lib/narrator";
 import { useGame } from "../../src/lib/useGame";
-import { Button, C, Card, H, Input, Stepper, T } from "../../src/ui";
+import { Button, C, Card, F, H, Input, Stepper, T } from "../../src/ui";
 
 type Send = (m: ClientMessage) => boolean;
 
@@ -141,7 +141,7 @@ function Adventure({ view, send }: { view: GameView; send: Send }) {
       <Card title="The story so far">
         {feed.map((e) => (
           <View key={e.id} style={{ borderLeftWidth: e.visibility === "public" ? 0 : 6, borderLeftColor: C.zap, paddingLeft: 8, gap: 2 }}>
-            <Text style={{ color: e.kind === "scene" ? C.zap : C.text, fontWeight: "800" }}>{e.visibility !== "public" ? "🤫 " : ""}{e.title}</Text>
+            <Text style={{ color: e.kind === "scene" ? C.zap : C.text, fontFamily: F.extrabold }}>{e.visibility !== "public" ? "🤫 " : ""}{e.title}</Text>
             <T>{e.text}</T>
           </View>
         ))}
@@ -162,8 +162,8 @@ function DecisionCard({ view, d, send }: { view: GameView; d: Decision; send: Se
       {d.available_choices.map((c) => (
         <Pressable key={c.id} accessibilityRole="radio" accessibilityState={{ checked: choice === c.id && !free }} onPress={() => { setChoice(c.id); setFree(""); }}
           style={{ borderWidth: 3, borderRadius: 12, padding: 10, backgroundColor: choice === c.id && !free ? C.peach : "#fff" }}>
-          <Text style={{ fontWeight: "800", fontSize: 16 }}>{c.label}</Text>
-          <Text style={{ fontSize: 12 }}>{c.risk.toUpperCase()} · {c.stat}{Object.entries(c.cost).map(([k, v]) => ` · -${v} ${view.shared_resources[k]?.label ?? k}`).join("")}</Text>
+          <Text style={{ fontFamily: F.extrabold, fontSize: 16 }}>{c.label}</Text>
+          <Text style={{ fontFamily: F.regular, fontSize: 12 }}>{c.risk.toUpperCase()} · {c.stat}{Object.entries(c.cost).map(([k, v]) => ` · -${v} ${view.shared_resources[k]?.label ?? k}`).join("")}</Text>
         </Pressable>
       ))}
       <Input value={free} onChangeText={setFree} maxLength={300} multiline placeholder="…or do literally anything else" style={{ backgroundColor: "#fff", color: "#000" }} />
@@ -191,7 +191,7 @@ function Ending({ view, send, code }: { view: GameView; send: Send; code: string
   return (
     <>
       <H size={30}>The Complete Story</H>
-      <T style={{ color: C.slime, fontWeight: "900", fontSize: 20 }}>{o.headline}</T>
+      <T style={{ color: C.slime, fontFamily: F.comic, fontSize: 24, letterSpacing: 0.5 }}>{o.headline}</T>
       <T muted>{o.group_summary}</T>
       <Card title="Read aloud">
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>

@@ -132,7 +132,7 @@ Every LLM response is parsed into a Pydantic model (`models/llm_schemas.py`), re
 
 ### The LLM services
 
-`ThemeNormalizer`, `ThemeMerger`, `ObjectiveGenerator`, `CharacterGenerator`, `SceneGenerator`, `DecisionGenerator`, `ActionInterpreter`, `ConsequenceResolver`, `NPCGenerator`, `NarrativeDirector`, `StorySummarizer`, `AdventureChronicleBuilder` (deterministic, in `engine/chronicle.py`), `FinalStoryGenerator`, `FinalStoryEditor` — see `backend/app/llm/services.py`. Each has its own narrow prompt; there is no giant "what happens next?" prompt.
+`ThemeNormalizer`, `ThemeMerger`, `ObjectiveGenerator`, `CharacterGenerator`, `SceneGenerator`, `DecisionGenerator`, `ActionInterpreter`, `ConsequenceResolver`, `NPCGenerator`, `NarrativeDirector`, `StorySummarizer`, `AdventureChronicleBuilder` (deterministic, in `engine/chronicle.py`), `FinalStoryGenerator`, `FinalStoryEditor`, `EncounterGenerator` — see `backend/app/llm/services.py`. Each has its own narrow prompt; there is no giant "what happens next?" prompt.
 
 ---
 
@@ -164,6 +164,19 @@ Shared: food (eaten every scene; running out costs health and morale), money (br
 
 ### The Narrative Director
 Chooses each scene's beat (early adventure → first major decision → branching paths → resource pressure → group interaction → escalation → plot twist → major consequence → final challenge), groups players by similar paths, sets the communication mode (`open`, `restricted`, `private_only`, `disabled`), raises difficulty, draws random events (helpful when resources are low, harmful when the party is comfortable, character-specific for the least-involved player), brings back running jokes as callbacks, plants hunches toward hidden truths, and guarantees the story reaches an ending.
+
+### Ridiculous encounters — the heartbeat of the adventure
+Most scenes, the **Encounter Director** (`engine/encounters.py`) interrupts one decision group with a situation that is funny *before* anyone decides — two bodybuilders arguing about whether a week has eight days, a ghost asking whether it is rude to haunt someone already asleep — and the players commit to one of 3–4 answers, each with a persona (*The Diplomat*, *The Chaos Agent*…) and a potential-outcome teaser. Nothing is an obviously right answer; every answer leads somewhere different.
+
+- **Five categories**, rotated so consecutive encounters differ: ridiculous social situations, no stupid questions, petty revenge & minor grievances, absurd hypotheticals, ridiculous challenges.
+- **Three ways to answer**: alone (solo players also get a *Your Specialty* answer built from their special ability), as a **group vote** (plurality wins; improvisers go rogue), or as a **secret council** — every solo player gets the *same* encounter in private, and afterwards the NPC compares notes. Unanimity unsettles them; total contradiction goes in their file and becomes a running joke; lone dissenters are noticed.
+- **Answers are real actions.** They carry a stat, risk and tags, so characters, items, luck, interactions and seeded dice decide how it goes. Then the engine — never the model — applies the answer's win or setback effect: shared resources, the NPC's opinion, a strange item, an **obligation** that comes due two scenes later, a **hidden consequence** only the responders learn (revealed at the end), a **new location**, or an **honorary title** the character is stuck with.
+- **Memory and callbacks.** Every encounter NPC becomes a real NPC. A couple of scenes later one may come back, quoting the answer you gave and how it changed their life ("ever since you ruled that leg day counts twice, Brick has made you Keeper of the Gym Calendar"). Callbacks are rationed so they land. Everything is chronicled, so the final story and epilogues remember it, and three achievements come from it.
+- **Content.** With an LLM, the `EncounterGenerator` writes an original encounter per scene (structured output → tags/stats/amounts clamped → family-friendly moderation → novelty check against what this table already played); any failure falls back to the original 17-encounter library, which is also the offline experience. The host can set frequency to *every scene*, *most scenes* (default — never two encounter-free scenes in a row), *occasionally* or *off*.
+- **Measurement.** `encounter_started` / `encounter_resolved` analytics carry counts and keys only: participation, time between encounters, freeform/auto answers, and **choice diversity** (normalised entropy of the answers). Library encounters' diversity is also aggregated across games in the `encounter_stats` table, and encounters where everyone keeps picking the same option are drawn less often.
+
+### Family-friendly by default
+Theme pitches, character sheets, free-text actions and generated encounters pass through `llm/safety.py:moderate` before anyone sees them: clearly unsuitable content is rejected with a friendly error, and slapstick violence, real-world pranks and mild profanity are rewritten into cartoon equivalents (*laxatives* → *harmless glitter*), so a player's idea survives.
 
 ### Story memory
 Short-term entries, a rolling medium summary, long-term facts, per-character memories, world facts, unresolved threads, running jokes (with mention counts), major decisions and important consequences — all bounded, so prompts never grow without limit.

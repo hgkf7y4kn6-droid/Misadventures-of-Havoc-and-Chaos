@@ -141,7 +141,7 @@ function Adventure({ view, send }: { view: GameView; send: Send }) {
       <Card title="The story so far">
         {feed.map((e) => (
           <View key={e.id} style={{ borderLeftWidth: e.visibility === "public" ? 0 : 6, borderLeftColor: C.zap, paddingLeft: 8, gap: 2 }}>
-            <Text style={{ color: e.kind === "scene" ? C.zap : C.text, fontWeight: "800" }}>{e.visibility !== "public" ? "🤫 " : ""}{e.title}</Text>
+            <Text style={{ color: e.kind === "scene" ? C.zap : e.kind === "encounter" ? C.havoc : C.text, fontWeight: "800" }}>{e.visibility !== "public" ? "🤫 " : ""}{e.title}</Text>
             <T>{e.text}</T>
           </View>
         ))}
@@ -157,12 +157,22 @@ function DecisionCard({ view, d, send }: { view: GameView; d: Decision; send: Se
   const submitted = d.submitted[view.me.id];
   const waiting = d.player_ids.filter((p) => !d.submitted[p]).length;
   return (
-    <Card paper title={`${d.kind === "group" ? "👥" : d.kind === "final" ? "⚔️" : "🤫"} ${d.title}`}>
+    <Card paper title={`${d.encounter ? d.encounter.npc_emoji : d.kind === "group" ? "👥" : d.kind === "final" ? "⚔️" : "🤫"} ${d.title}`}>
+      {d.encounter && (
+        <Text style={{ fontWeight: "900", color: C.havoc }}>
+          {d.encounter.is_callback ? "↩️ THEY'RE BACK" : "🎲 RIDICULOUS ENCOUNTER"} · {d.encounter.category_emoji} {d.encounter.category_label}
+        </Text>
+      )}
       <T paper>{d.shared_context}</T>
+      {d.encounter?.mode === "secret_council" && (
+        <T paper>Everyone got this exact question, alone. Nobody sees anyone else's answer until the NPC compares notes.</T>
+      )}
       {d.available_choices.map((c) => (
         <Pressable key={c.id} accessibilityRole="radio" accessibilityState={{ checked: choice === c.id && !free }} onPress={() => { setChoice(c.id); setFree(""); }}
           style={{ borderWidth: 3, borderRadius: 12, padding: 10, backgroundColor: choice === c.id && !free ? "#ffe2d4" : "#fff" }}>
+          {c.style ? <Text style={{ fontWeight: "900", color: C.havoc }}>{c.style}</Text> : null}
           <Text style={{ fontWeight: "800", fontSize: 16 }}>{c.label}</Text>
+          {c.style && c.description ? <Text style={{ fontSize: 13 }}>Potential outcome: {c.description}</Text> : null}
           <Text style={{ fontSize: 12 }}>{c.risk.toUpperCase()} · {c.stat}{Object.entries(c.cost).map(([k, v]) => ` · -${v} ${view.shared_resources[k]?.label ?? k}`).join("")}</Text>
         </Pressable>
       ))}

@@ -66,6 +66,7 @@ class PlannedAction:
     location_id: str | None = None
     final: bool = False
     freeform: bool = False
+    choice_id: str | None = None  # the Choice that produced this action (None for free text)
 
 
 @dataclass

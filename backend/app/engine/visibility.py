@@ -77,6 +77,7 @@ def project(state: GameState, player_id: str) -> dict[str, Any]:
             # who has decided — never *what* they decided
             "submitted": {pid: pid in g.submissions for pid in g.player_ids},
             "my_submission": g.submissions[player_id].model_dump(exclude={"interpretation"}) if player_id in g.submissions else None,
+            "encounter": _encounter_view(state, g.encounter_id),
         })
 
     phase_extra: dict[str, Any] = {}
@@ -141,6 +142,18 @@ def project(state: GameState, player_id: str) -> dict[str, Any]:
     if ended:
         view["revealed"] = revealed_secrets(state)
     return view
+
+
+def _encounter_view(state: GameState, encounter_id: str | None) -> dict[str, Any] | None:
+    """What a responder may see of an encounter: never its effects (some are hidden consequences)."""
+    enc = state.encounters.get(encounter_id or "")
+    if enc is None:
+        return None
+    from .encounters import category_emoji, category_label
+
+    return {"id": enc.id, "category": enc.category, "category_label": category_label(enc.category),
+            "category_emoji": category_emoji(enc.category), "title": enc.title, "npc_name": enc.npc_name,
+            "npc_emoji": enc.npc_emoji, "question": enc.question, "mode": enc.mode, "is_callback": bool(enc.callback_of)}
 
 
 def _entry_visible(e: StoryEntry, player_id: str) -> bool:

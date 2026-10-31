@@ -20,6 +20,7 @@ export function useGame(code: string) {
         else if (m.type === "character_suggestion") setSuggestion(m.character);
         else if (m.type === "event" && m.event === "PRIVATE_INFORMATION") setNotice("🤫 You learned something nobody else knows.");
         else if (m.type === "event" && m.event === "RANDOM_EVENT") setNotice(`🎲 ${String(m.data.title ?? "Something happened")}`);
+        else if (m.type === "event" && m.event === "ENCOUNTER_STARTED") setNotice(`🙃 Ridiculous encounter: ${String(m.data.title ?? "brace yourself")}`);
       },
     }).start();
     socket.current = sock;

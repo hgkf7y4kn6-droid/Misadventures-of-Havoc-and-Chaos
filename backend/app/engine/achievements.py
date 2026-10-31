@@ -72,6 +72,21 @@ def compute(state: GameState) -> dict[str, list[Achievement]]:
                   _events_for(state, p.id, tiers=(OutcomeTier.CATASTROPHIC_SUCCESS.value, OutcomeTier.FAILURE.value)))
         if p.stats.times_soloed >= 3 and p.stats.betrayals == 0:
             award(p, "lone_wolf", "Lone Wolf", "Spent most of the adventure going it alone.", "🐺", _events_for(state, p.id))
+    # Ridiculous encounters
+    responders = [p for p in players if p.stats.encounter_wins >= 2]
+    if responders:
+        p = max(responders, key=lambda p: (p.stats.encounter_wins, p.id))
+        award(p, "settled_it", "Settled It Immediately",
+              f"Answered {p.stats.encounter_wins} ridiculous situations, and somehow it worked.", "🧑‍⚖️",
+              _events_for(state, p.id, "encounter"))
+    titles = state.world_state.get("titles", {})
+    for p in players:
+        if p.stats.contrarian_picks:
+            award(p, "contrarian", "Respectfully, No", "Gave a different answer from everyone else in a secret council.", "🙃",
+                  _events_for(state, p.id, "encounter"))
+        if titles.get(p.id):
+            award(p, "honorary_title", "Honorary Title", f"Now officially '{titles[p.id][0]}'. There is no way to undo this.", "📜",
+                  _events_for(state, p.id, "encounter"))
     for p in players:
         if not result[p.id]:
             award(p, "participant", "Was Definitely There", "Present for all of it. Responsible for some of it.", "🎟️", _events_for(state, p.id))

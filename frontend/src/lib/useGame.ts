@@ -11,6 +11,7 @@ export interface Toast { id: number; text: string; tone: "info" | "error" | "sec
 const EVENT_TOASTS: Record<string, (d: Record<string, unknown>) => string | null> = {
   PRIVATE_INFORMATION: () => "🤫 You learned something nobody else knows.",
   RANDOM_EVENT: (d) => `🎲 ${String(d.title ?? "Something happened")}`,
+  ENCOUNTER_STARTED: (d) => `🙃 Ridiculous encounter: ${String(d.title ?? "brace yourself")}`,
   GROUP_FORMED: () => "👥 You've been grouped with others. Group chat is open.",
   FINAL_CHALLENGE_STARTED: () => "⚔️ The final challenge has begun!",
   PLAYER_KICKED: (d) => `👢 ${String(d.name ?? "Someone")} was removed.`,

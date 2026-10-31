@@ -25,6 +25,7 @@ from ..models.game import (
     ActionInterpretation,
     Character,
     Choice,
+    Encounter,
     HiddenVariable,
     Location,
     Objective,
@@ -38,6 +39,7 @@ from ..models.llm_schemas import (
     LLMActionInterpretation,
     LLMCharacter,
     LLMDecisionBatch,
+    LLMEncounter,
     LLMFinalStory,
     LLMNarrationBatch,
     LLMObjectiveBundle,
@@ -48,7 +50,7 @@ from ..models.llm_schemas import (
     LLMTwist,
 )
 from .base import LLMError, LLMProvider
-from .safety import GUARD, clean_text, quote
+from .safety import GUARD, clean_text, moderate, quote
 
 log = logging.getLogger("havoc.llm")
 M = TypeVar("M", bound=BaseModel)
@@ -57,7 +59,8 @@ STYLE = (
     f"You are part of the narrative engine for '{GAME_TITLE}', a multiplayer cooperative comedy adventure. "
     "Voice: fast, absurd, specific, visually descriptive, character-driven. Prefer concrete, surprising details "
     "over generic fantasy prose. Never use phrases like 'little did they know' or 'in a world where'. "
-    "Keep it PG-13. The game engine is authoritative: never invent resource numbers, dice results, "
+    "Keep everything family-friendly (Saturday-morning cartoon, not late-night TV): slapstick is fine, cruelty, "
+    "gore, romance, alcohol, dangerous real-world pranks and humiliating real groups are not. The game engine is authoritative: never invent resource numbers, dice results, "
     "success or failure — describe the outcomes you are given. " + GUARD
 )
 
@@ -600,6 +603,99 @@ def chapters_from_llm(story: LLMFinalStory) -> list[StoryChapter]:
 
 
 # ---------------------------------------------------------------------------
+# Ridiculous encounters
+# ---------------------------------------------------------------------------
+
+ENCOUNTER_BRIEFS = {
+    "ridiculous_social": "an argument, misunderstanding, petty disagreement, awkward conversation or absurd competition "
+                         "where an NPC takes something insignificant extremely seriously",
+    "no_stupid_questions": "an NPC sincerely asks a bizarre, oddly specific or strangely phrased question and needs an answer",
+    "petty_revenge": "a small, relatable inconvenience or grievance that can escalate into an elaborate, fictional, harmless plan",
+    "absurd_hypothetical": "an impossible circumstance or strange restriction with surprisingly serious consequences",
+    "ridiculous_challenge": "a mundane task, competition or puzzle under an absurd restriction that needs creative problem-solving",
+}
+
+
+class EncounterGenerator(BaseService):
+    """Writes ONE original encounter. Validated, moderated, novelty-checked and clamped — or ``None`` (use the library)."""
+
+    async def generate(self, category: str, mechanism: str, ctx: dict[str, str], public_context: str,
+                       recent_titles: list[str], mode: str) -> Encounter | None:
+        if self.provider is None:
+            return None
+        who = {"individual": "one player, alone", "group_vote": "a small group who will vote",
+               "secret_council": "every player at once, each answering alone and in secret"}.get(mode, "the players")
+        result = await self._call(
+            LLMEncounter, STYLE,
+            f"PUBLIC context:\n{public_context}\n\nWrite ONE original 'ridiculous encounter' that interrupts the "
+            f"adventure at {quote(ctx.get('loc', ''), 80)}. Category: {ENCOUNTER_BRIEFS.get(category, category)}. "
+            f"Build it on this comedic mechanism: {mechanism}. It will be answered by {who}.\n"
+            "The situation must be funny BEFORE anyone decides. Give: a short title; a 2-3 sentence intro; the NPC's "
+            "question, demand or challenge (in their voice); the NPC's name, one emoji and personality; and 4 answers. "
+            "Each answer gets a persona style ('The Diplomat', 'The Scientist', 'The Chaos Agent'...), what they do, a "
+            "short potential-outcome teaser, an aftermath clause for when the NPC returns later, what goes well and "
+            "what goes badly. No answer may be obviously correct; every answer must lead somewhere entertaining and "
+            f"different. Tags from {TAG_VOCABULARY}; stat from {list(STATS)}; risk safe/risky/wild with at least one "
+            f"safe and one wild; resources from {list(COSTABLE)}; amounts 1-2. Write wholly original material — do not "
+            "reuse jokes, stories, names or wording from Reddit, podcasts, party games, films or books. Family-friendly. "
+            "No real-world pranks, food tampering, or targeted humiliation as solutions.\n"
+            "Do NOT reuse any of these recent encounters: " + ("; ".join(quote(t, 80) for t in recent_titles[-12:]) or "(none)"),
+            2200,
+        )
+        if result is None:
+            return None
+        return validate_generated(result, recent_titles, category)
+
+
+def _moderated(text: str, limit: int) -> str | None:
+    out = moderate(clean_text(text, limit))
+    return out.strip() if out else None
+
+
+def validate_generated(result: LLMEncounter, recent_titles: list[str], category: str) -> Encounter | None:
+    """Engine-side gate for generated encounters. Any failure means the deterministic library is used instead."""
+    from ..engine.encounters import new_generated_key
+    from ..models.game import EncounterCategory, EncounterEffect, EncounterOption
+
+    fields = {k: _moderated(getattr(result, k), n) for k, n in
+              (("title", 80), ("intro", 600), ("question", 300), ("npc_name", 60), ("npc_personality", 160))}
+    if any(not v for v in fields.values()):
+        return None
+    if any(themes.lexical_similarity(fields["title"], t) >= 0.6 for t in recent_titles):
+        return None  # too close to something the table has already played
+    options = []
+    seen: set[str] = set()
+    for i, o in enumerate(result.options[:4]):
+        style, label, teaser = _moderated(o.style, 40), _moderated(o.label, 160), _moderated(o.teaser, 140)
+        aftermath = _moderated(o.aftermath, 160) or "has not stopped talking about it"
+        secret = _moderated(o.hidden_consequence, 200) if o.hidden_consequence.strip() else ""
+        if not (style and label and teaser) or secret is None or label.lower() in seen or style.lower() in seen:
+            return None
+        seen |= {label.lower(), style.lower()}
+        win: dict[str, int] = {}
+        if o.success_resource.strip().lower() in COSTABLE and o.success_amount:
+            win[o.success_resource.strip().lower()] = max(1, min(2, abs(int(o.success_amount))))
+        lose: dict[str, int] = {}
+        if o.setback_resource.strip().lower() in COSTABLE and o.setback_amount:
+            lose[o.setback_resource.strip().lower()] = -max(1, min(2, abs(int(o.setback_amount))))
+        reaction = max(-2, min(2, int(o.npc_reaction)))
+        options.append(EncounterOption(
+            key="abcd"[i], style=style, label=label, teaser=teaser, tags=_tags(o.tags) or ["negotiate"], stat=_stat(o.stat),
+            risk=o.risk, advances_objective=bool(o.advances_objective), aftermath=aftermath,
+            win=EncounterEffect(resources=win, npc_disposition=reaction, secret=secret or ""),
+            lose=EncounterEffect(resources=lose, npc_disposition=-1 if reaction >= 0 else reaction),
+        ))
+    if len(options) < 3:
+        return None
+    if not any(o.risk == Risk.SAFE for o in options):
+        min(options, key=lambda o: ["safe", "risky", "wild"].index(o.risk.value)).risk = Risk.SAFE
+    emoji = clean_text(result.npc_emoji, 4) or "🧑"
+    return Encounter(key=new_generated_key(fields["title"]), category=EncounterCategory(category), title=fields["title"], intro=fields["intro"],
+                     question=fields["question"], npc_name=fields["npc_name"], npc_emoji=emoji,
+                     npc_personality=fields["npc_personality"], options=options, source="generated")
+
+
+# ---------------------------------------------------------------------------
 # Container
 # ---------------------------------------------------------------------------
 
@@ -621,6 +717,7 @@ class LLMService:
         self.story_summarizer = StorySummarizer(provider, settings)
         self.final_story_generator = FinalStoryGenerator(provider, settings)
         self.final_story_editor = FinalStoryEditor(provider, settings)
+        self.encounter_generator = EncounterGenerator(provider, settings)
 
     @property
     def name(self) -> str:

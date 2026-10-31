@@ -148,3 +148,31 @@ class LLMFinalStory(BaseModel):
 
 class LLMTwist(BaseModel):
     twist: str
+
+
+class LLMEncounterOption(BaseModel):
+    style: str = Field(description="Persona label for this answer, e.g. 'The Diplomat', 'The Chaos Agent'")
+    label: str = Field(description="What the responder actually does or says (one sentence)")
+    teaser: str = Field(description="Short 'potential outcome' hint shown before choosing")
+    tags: list[str]
+    stat: str
+    risk: Risk
+    advances_objective: bool
+    aftermath: str = Field(description="How the NPC's life changed because of this answer, as a clause, e.g. "
+                                       "'made you Keeper of the Gym Calendar' — used when the NPC returns later")
+    success_resource: str = Field(description="shared resource key gained if this goes well, or empty string")
+    success_amount: int
+    setback_resource: str = Field(description="shared resource key lost if this goes badly, or empty string")
+    setback_amount: int
+    npc_reaction: int = Field(description="-2..2: how the NPC feels about the party if this answer works")
+    hidden_consequence: str = Field(description="optional secret only the responders learn, or empty string")
+
+
+class LLMEncounter(BaseModel):
+    title: str
+    intro: str
+    question: str
+    npc_name: str
+    npc_emoji: str
+    npc_personality: str
+    options: list[LLMEncounterOption]

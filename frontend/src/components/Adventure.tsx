@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChatMessage, CommMode, Decision, GameView, StoryEntry } from "../lib/types";
+import type { ChatMessage, CommMode, Decision, EncounterMode, GameView, StoryEntry } from "../lib/types";
 import { Avatar, Panel, Timer } from "./common";
 
 type Send = (m: Record<string, unknown>) => boolean;
@@ -11,6 +11,11 @@ const COMM_LABEL: Record<CommMode, string> = {
   disabled: "🔇 Silence. The Director forbids talking.",
 };
 const RISK_STYLE = { safe: "bg-slime text-black", risky: "bg-zap text-black", wild: "bg-chaos text-white" } as const;
+const ENCOUNTER_MODE_HINT: Record<EncounterMode, string> = {
+  individual: "Just you. Answer however you like.",
+  group_vote: "Your group answers together. Most votes wins; anyone who improvises their own answer goes rogue.",
+  secret_council: "Everyone in the party got this exact question, alone. Nobody can see anyone else's answer — until the NPC compares notes.",
+};
 const VIS_STYLE: Record<string, string> = {
   public: "",
   private: "border-l-8 border-l-zap",
@@ -88,15 +93,25 @@ function DecisionPanel({ view, decision: d, send }: { view: GameView; decision: 
     if (ok) { setPushLuck(false); setUseAbility(false); }
   }
 
+  const enc = d.encounter;
   return (
-    <section className="sticker-paper p-4 animate-pop" aria-labelledby={`dec-${d.group_id}`}>
+    <section className={`sticker-paper p-4 animate-pop ${enc ? "ring-4 ring-havoc" : ""}`} aria-labelledby={`dec-${d.group_id}`}>
+      {enc && (
+        <div className="-mt-1 mb-2 flex flex-wrap items-center gap-2">
+          <span className="rounded-full border-[3px] border-black bg-havoc text-white font-display text-lg px-3 py-0.5 -rotate-2 shadow-[3px_3px_0_#000]">
+            {enc.is_callback ? "↩️ They're back" : "🎲 Ridiculous Encounter"}
+          </span>
+          <span className="rounded-full border-2 border-black bg-zap text-black font-bold text-sm px-2 py-0.5">{enc.category_emoji} {enc.category_label}</span>
+        </div>
+      )}
       <div className="flex justify-between items-start gap-2 flex-wrap">
-        <h3 id={`dec-${d.group_id}`} className="font-display text-3xl">{d.kind === "group" ? "👥 " : d.kind === "final" ? "⚔️ " : "🤫 "}{d.title}</h3>
+        <h3 id={`dec-${d.group_id}`} className="font-display text-3xl">{enc ? `${enc.npc_emoji} ` : d.kind === "group" ? "👥 " : d.kind === "final" ? "⚔️ " : "🤫 "}{d.title}</h3>
         <span className="font-type text-sm bg-black/10 rounded px-2 py-1">
           {d.kind === "group" ? `Group decision with ${members.filter((m) => m.id !== me.id).map((m) => m.character.name || m.name).join(", ")}` : d.kind === "final" ? "Your part in the finale" : "Only you can see this"}
         </span>
       </div>
       <p className="font-type text-lg mt-2 whitespace-pre-line">{d.shared_context}</p>
+      {enc && <p className="mt-2 text-sm font-semibold bg-black/10 rounded px-2 py-1">{ENCOUNTER_MODE_HINT[enc.mode]}</p>}
       {d.visible_information.length > 0 && (
         <ul className="mt-2 space-y-1">{d.visible_information.map((i) => <li key={i.id} className="bg-zap/40 rounded px-2 py-1">🔎 <b>{i.title}:</b> {i.text}</li>)}</ul>
       )}
@@ -105,8 +120,9 @@ function DecisionPanel({ view, decision: d, send }: { view: GameView; decision: 
           <button key={c.id} role="radio" aria-checked={choice === c.id && !freeform}
             onClick={() => { setChoice(c.id); setFreeform(""); }}
             className={`text-left rounded-xl border-[3px] border-black p-3 bg-white transition ${choice === c.id && !freeform ? "ring-4 ring-havoc -rotate-1 shadow-[4px_4px_0_#000]" : "hover:-rotate-[0.5deg]"}`}>
+            {c.style && <div className="font-display text-havoc text-xl leading-none mb-1">{c.style}</div>}
             <div className="font-bold text-lg">{c.label}</div>
-            {c.description && <div className="text-sm opacity-80">{c.description}</div>}
+            {c.description && <div className="text-sm opacity-80">{c.style ? <><b>Potential outcome:</b> {c.description}</> : c.description}</div>}
             <div className="flex gap-1 flex-wrap mt-1 text-xs font-bold">
               <span className={`rounded px-1.5 py-0.5 border-2 border-black ${RISK_STYLE[c.risk]}`}>{c.risk.toUpperCase()}</span>
               <span className="rounded px-1.5 py-0.5 border-2 border-black bg-violet-200">{c.stat}</span>
@@ -163,7 +179,7 @@ function StoryFeed({ entries }: { entries: StoryEntry[] }) {
         {shown.map((e) => (
           <li key={e.id} className={`rounded-xl bg-black/25 p-3 ${VIS_STYLE[e.visibility] ?? ""} ${e.kind === "scene" ? "bg-havoc/15" : ""}`}>
             <div className="flex justify-between gap-2 flex-wrap">
-              <h3 className={`font-display text-xl ${e.kind === "scene" ? "text-zap" : e.kind === "event" ? "text-sky" : "text-white"}`}>{e.title}</h3>
+              <h3 className={`font-display text-xl ${e.kind === "scene" ? "text-zap" : e.kind === "event" ? "text-sky" : e.kind === "encounter" ? "text-havoc" : "text-white"}`}>{e.title}</h3>
               {e.visibility !== "public" && (
                 <span className="text-xs font-bold rounded px-2 py-0.5 bg-zap text-black self-start">{e.visibility === "group" ? "👥 GROUP ONLY" : "🤫 ONLY YOU"}</span>
               )}

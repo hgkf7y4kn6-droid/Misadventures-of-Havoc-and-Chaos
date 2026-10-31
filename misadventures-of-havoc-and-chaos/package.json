@@ -3,7 +3,8 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
-    "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
+    "@expo-google-fonts/bangers": "^0.4.1",
+    "@expo-google-fonts/nunito": "^0.4.2",
     "@expo/ui": "~57.0.21",
     "@tailwindcss/postcss": "^4.3.3",
     "expo": "~57.0.26",

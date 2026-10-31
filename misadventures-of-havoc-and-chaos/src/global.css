@@ -34,8 +34,11 @@
   --spacing-xl: 32px;
   --spacing-xxl: 48px;
 
-  /* Fonts — each value is the exact family name registered with useFonts in src/app/_layout.tsx,
-     so `font-sans-bold` resolves to the "sans-bold" family → PlusJakartaSans_700Bold. */
+  /* Fonts — each value is the exact family name registered with useFonts in src/app/_layout.tsx.
+     font-comic (Bangers): punchy comic-book display face for titles and big moments; it is all caps,
+     so keep it to short lines. font-sans-* (Nunito): rounded, friendly and readable for body text
+     and the narrated story. Both are SIL Open Font License, so they can ship inside the app. */
+  --font-comic: comic;
   --font-sans-regular: sans-regular;
   --font-sans-medium: sans-medium;
   --font-sans-semibold: sans-semibold;

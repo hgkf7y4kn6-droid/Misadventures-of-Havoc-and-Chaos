@@ -823,17 +823,23 @@ class GameManager:
                 safest = min(g.available_choices, key=lambda c: (["safe", "risky", "wild"].index(c.risk.value), c.id))
                 g.submissions[pid] = Submission(player_id=pid, choice_id=safest.id, auto=True)
 
+    async def _ensure_interpretation(self, g: DecisionGroup, sub: Submission) -> None:
+        if sub.interpretation is not None:
+            return
+        s = self.state
+        p = s.players[sub.player_id]
+        names = {x.id: x.display for x in s.active_players() if x.id != p.id}
+        npc_names = {n.id: n.name for n in s.npcs.values() if p.id in n.known_by}
+        obj_words = procgen.keywords(f"{s.objective.title} {s.objective.macguffin}") if s.objective else []
+        sub.interpretation = await self.llm.action_interpreter.interpret(
+            sub.freeform, p.display, f"{p.character.archetype}; ability {p.character.special_ability}; weakness {p.character.weakness}",
+            g.shared_context, names, npc_names, obj_words)
+
     async def _interpret(self, g: DecisionGroup, sub: Submission) -> PlannedAction:
         s = self.state
         p = s.players[sub.player_id]
         if sub.freeform:
-            if sub.interpretation is None:
-                names = {x.id: x.display for x in s.active_players() if x.id != p.id}
-                npc_names = {n.id: n.name for n in s.npcs.values() if p.id in n.known_by}
-                obj_words = procgen.keywords(f"{s.objective.title} {s.objective.macguffin}") if s.objective else []
-                sub.interpretation = await self.llm.action_interpreter.interpret(
-                    sub.freeform, p.display, f"{p.character.archetype}; ability {p.character.special_ability}; weakness {p.character.weakness}",
-                    g.shared_context, names, npc_names, obj_words)
+            await self._ensure_interpretation(g, sub)
             it = sub.interpretation
             return PlannedAction(key=f"{g.group_id}:{p.id}", group_id=g.group_id, player_ids=[p.id], description=sub.freeform,
                                  tags=it.tags, risk=it.risk, stat=it.stat, cost=it.cost, target_player_id=it.target_player_id,
@@ -905,6 +911,15 @@ class GameManager:
         groups = list(s.pending_decisions.values())
         for g in groups:
             self._auto_submit(g)
+        # Interpret free-text actions up front and concurrently. Planning reads the first submission of each
+        # distinct text in a group (group winners share one interpretation), so warm exactly those.
+        firsts: dict[tuple[str, str], tuple[DecisionGroup, Submission]] = {}
+        for g in groups:
+            for pid in g.player_ids:
+                sub = g.submissions.get(pid)
+                if sub and sub.freeform and s.players[pid].status != PlayerStatus.LEFT:
+                    firsts.setdefault((g.group_id, sub.freeform.lower().strip()), (g, sub))
+        await asyncio.gather(*(self._ensure_interpretation(g, sub) for g, sub in firsts.values()))
         actions: list[PlannedAction] = []
         for g in groups:
             actions.extend(await self._plan_group(g))
@@ -914,13 +929,16 @@ class GameManager:
         resolution = resolve_round(s, actions, escalation + (1 if is_final else 0))
         outcomes = resolution.outcomes
 
-        # Narrate per audience — each call sees only what that audience may know.
+        # Narrate per audience — each call sees only what that audience may know. The calls are
+        # independent, so they run concurrently.
+        group_outcomes = [[o for o in outcomes if o.planned.group_id == g.group_id] for g in groups]
+        group_texts = await asyncio.gather(*(
+            self.llm.consequence_resolver.narrate(
+                ", ".join(s.players[p].display for p in g.player_ids), authorized_context(s, g.player_ids),
+                [self._narration_request(o) for o in g_out])
+            for g, g_out in zip(groups, group_outcomes, strict=True)))
         narr: dict[str, str] = {}
-        for g in groups:
-            g_out = [o for o in outcomes if o.planned.group_id == g.group_id]
-            reqs = [self._narration_request(o) for o in g_out]
-            texts = await self.llm.consequence_resolver.narrate(
-                ", ".join(s.players[p].display for p in g.player_ids), authorized_context(s, g.player_ids), reqs)
+        for g_out, texts in zip(group_outcomes, group_texts, strict=True):
             for o, t in zip(g_out, texts, strict=False):
                 narr[o.planned.key] = t
 

@@ -30,7 +30,12 @@ class Settings(BaseSettings):
 
     # LLM provider: "offline" (procedural, no network), "anthropic", "openai"
     llm_provider: str = "offline"
+    # Two tiers: the final story uses llm_model; everything during play (themes, characters, scenes,
+    # decisions, actions, narration, summaries) uses llm_round_model, which falls back to llm_model.
+    # Unset, the anthropic provider uses claude-sonnet-5-5 for the story and claude-haiku-5-5 for rounds.
     llm_model: str | None = None
+    llm_round_model: str | None = None
+    llm_effort: str = "medium"  # anthropic only: low | medium | high | xhigh | max
     llm_api_key: str | None = None
     llm_base_url: str | None = None  # OpenAI-compatible endpoints
     llm_timeout_seconds: float = 45.0

@@ -22,6 +22,7 @@ export interface Env {
   DATABASE_URL?: string;
   LLM_PROVIDER?: string;
   LLM_MODEL?: string;
+  LLM_ROUND_MODEL?: string;
   LLM_API_KEY?: string;
   TTS_PROVIDER?: string;
   TTS_API_KEY?: string;

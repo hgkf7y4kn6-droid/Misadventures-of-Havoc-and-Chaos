@@ -46,7 +46,7 @@ The image builds the web client and serves it from the game server.
 HAVOC_LLM_PROVIDER=anthropic HAVOC_LLM_API_KEY=sk-ant-... uvicorn app.main:app
 ```
 
-The Anthropic provider uses the official SDK with structured outputs (default model `claude-opus-5-5`, server-side refusal fallback enabled). An OpenAI-compatible provider is included for any chat-completions endpoint. See [Configuration](#configuration).
+The Anthropic provider uses the official SDK with structured outputs. By default the final story is written by `claude-sonnet-5-5` (with server-side refusal fallback) and every call during play goes to the faster, cheaper `claude-haiku-5-5`; set `HAVOC_LLM_MODEL` / `HAVOC_LLM_ROUND_MODEL` to change either. An OpenAI-compatible provider is included for any chat-completions endpoint. See [Configuration](#configuration).
 
 ### Cloudflare edge + native apps
 
@@ -157,7 +157,7 @@ Each interaction links the two `AdventureEvent`s, which is exactly what the fina
 `d20 + stat + ability/weakness/item + morale/health/hunger + reputation/NPC disposition + interactions + world scars` vs a target set by risk (safe 8 / risky 12 / wild 15) and escalation. Outcomes: **catastrophic success, unexpected success, success, partial success, complication, failure**, plus delayed consequences (they come back 1–2 scenes later), injuries, new opportunities (loot, clues), and hidden-truth discoveries. Players can push their luck (reroll, costs luck), use their special ability (charges), or use an inventory item. All randomness is derived from the game seed plus a purpose label, so outcomes are reproducible and independent of submission order.
 
 ### Free-text actions
-Any decision accepts *"…or do literally anything else"*. The `ActionInterpreter` maps it to feasibility, risk, stat, tags, costs, targets and possible consequences; the engine resolves it like any other action. Betraying the group, burning down the cave or dressing a teammate as a chicken are all valid. In group decisions, the plurality wins — but anyone who wrote their own action **goes rogue** and resolves it separately.
+Any decision accepts *"…or do literally anything else"*. The `ActionInterpreter` maps it to feasibility, risk, stat, tags, costs, targets and possible consequences; the engine resolves it like any other action. Short, plain actions with a single recognised verb and nobody else named ("I hide under the table") are read by the keyword interpreter without an AI call; anything trickier goes to the AI. Betraying the group, burning down the cave or dressing a teammate as a chicken are all valid. In group decisions, the plurality wins — but anyone who wrote their own action **goes rogue** and resolves it separately.
 
 ### Resources that matter
 Shared: food (eaten every scene; running out costs health and morale), money (bribes, purchases), time (every scene costs time; at zero the finale starts), supplies (needed to build/repair), morale (bonus/penalty to every roll; collapse forces an early finale), reputation (affects every negotiation), vehicle (broken transport costs extra time). Individual: health (zero = incapacitated), luck, trust, ability charges, inventory (hidden items), personal knowledge.
@@ -254,7 +254,10 @@ All settings are environment variables prefixed `HAVOC_` (see `.env.example`).
 | `HAVOC_DATABASE_URL` | `sqlite+aiosqlite:///./havoc.db` | `postgresql+asyncpg://…` in production |
 | `HAVOC_REDIS_URL` | unset | enables Redis pub/sub fan-out |
 | `HAVOC_LLM_PROVIDER` | `offline` | `offline`, `anthropic`, `openai` |
-| `HAVOC_LLM_MODEL` / `HAVOC_LLM_API_KEY` / `HAVOC_LLM_BASE_URL` | | provider settings |
+| `HAVOC_LLM_MODEL` | anthropic: `claude-sonnet-5-5` | model for the final story |
+| `HAVOC_LLM_ROUND_MODEL` | anthropic: `claude-haiku-5-5`; else `HAVOC_LLM_MODEL` | model for every call during play |
+| `HAVOC_LLM_EFFORT` | `medium` | anthropic effort level |
+| `HAVOC_LLM_API_KEY` / `HAVOC_LLM_BASE_URL` | | provider settings |
 | `HAVOC_TTS_PROVIDER` | `browser` | `browser`, `openai`, `elevenlabs`, `google`, `polly` |
 | `HAVOC_TTS_API_KEY` | | |
 | `HAVOC_MIN_PLAYERS` / `HAVOC_MAX_PLAYERS_LIMIT` / `HAVOC_DEFAULT_MAX_PLAYERS` | 2 / 12 / 8 | |

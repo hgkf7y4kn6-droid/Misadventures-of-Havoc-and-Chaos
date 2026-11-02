@@ -15,7 +15,7 @@ from .analytics import build_analytics
 from .api.routes import play_router, router
 from .config import GAME_TITLE, get_settings
 from .identity import IdentityService
-from .llm.services import LLMService, build_provider
+from .llm.services import LLMService, build_providers
 from .persistence.db import Repository
 from .realtime.hub import Hub
 from .registry import GameRegistry
@@ -31,7 +31,8 @@ async def lifespan(app: FastAPI):
     await repo.init()
     hub = Hub(settings.redis_url)
     await hub.start()
-    llm = LLMService(build_provider(settings), settings)
+    round_provider, story_provider = build_providers(settings)
+    llm = LLMService(round_provider, settings, story_provider=story_provider)
     tts = TTSService(build_tts_provider(settings), settings)
     analytics = build_analytics(settings)
     edge = None

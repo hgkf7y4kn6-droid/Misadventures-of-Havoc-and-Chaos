@@ -11,6 +11,7 @@ No service ever mutates ``GameState``; the engine applies results.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -347,30 +348,37 @@ class DecisionGenerator(BaseService):
         if self.provider is None or not specs:
             return out
         # One call per spec keeps contexts isolated: a group's prompt never contains another group's secrets.
-        for s in specs:
-            result = await self._call(
-                LLMDecisionBatch, STYLE,
-                f"Story beat: {beat}. Decision type: {s.kind}.\nPlayers in this decision: {', '.join(s.player_names)}.\n"
-                f"Location: {s.location}.\nWhat these players know:\n{s.authorized_context}\n\n"
-                f"Write ONE decision with group_id '{s.group_id}': a title, a 1-3 sentence situation addressed to "
-                f"them ('you'), and 3 distinct choices. Tags must come from {TAG_VOCABULARY}. stat is one of "
-                f"{list(STATS)}. risk is safe/risky/wild. cost_resource is one of {list(COSTABLE)} or ''. "
-                "At least one choice should be safe and one wild. Make the situation specific and funny.",
-                1200,
-            )
-            if not result or not result.decisions:
-                continue
-            d = result.decisions[0]
-            choices = [
-                Choice(label=clean_text(c.label, 80), description=clean_text(c.description, 200), tags=_tags(c.tags) or ["explore"],
-                       risk=c.risk, stat=_stat(c.stat), cost=_cost(c.cost_resource, c.cost_amount),
-                       advances_objective=bool(c.advances_objective))
-                for c in d.choices[:4]
-                if c.label.strip()
-            ]
-            if len(choices) >= 2:
-                out[s.group_id] = (clean_text(d.title, 80) or s.fallback_title, clean_text(d.context, 600) or s.fallback_context, choices)
+        # The calls don't depend on each other, so they run concurrently.
+        results = await asyncio.gather(*(self._one(beat, s) for s in specs))
+        for s, generated in zip(specs, results, strict=True):
+            if generated:
+                out[s.group_id] = generated
         return out
+
+    async def _one(self, beat: str, s: DecisionSpec) -> tuple[str, str, list[Choice]] | None:
+        result = await self._call(
+            LLMDecisionBatch, STYLE,
+            f"Story beat: {beat}. Decision type: {s.kind}.\nPlayers in this decision: {', '.join(s.player_names)}.\n"
+            f"Location: {s.location}.\nWhat these players know:\n{s.authorized_context}\n\n"
+            f"Write ONE decision with group_id '{s.group_id}': a title, a 1-3 sentence situation addressed to "
+            f"them ('you'), and 3 distinct choices. Tags must come from {TAG_VOCABULARY}. stat is one of "
+            f"{list(STATS)}. risk is safe/risky/wild. cost_resource is one of {list(COSTABLE)} or ''. "
+            "At least one choice should be safe and one wild. Make the situation specific and funny.",
+            1200,
+        )
+        if not result or not result.decisions:
+            return None
+        d = result.decisions[0]
+        choices = [
+            Choice(label=clean_text(c.label, 80), description=clean_text(c.description, 200), tags=_tags(c.tags) or ["explore"],
+                   risk=c.risk, stat=_stat(c.stat), cost=_cost(c.cost_resource, c.cost_amount),
+                   advances_objective=bool(c.advances_objective))
+            for c in d.choices[:4]
+            if c.label.strip()
+        ]
+        if len(choices) < 2:
+            return None
+        return clean_text(d.title, 80) or s.fallback_title, clean_text(d.context, 600) or s.fallback_context, choices
 
 
 # ---------------------------------------------------------------------------
@@ -405,12 +413,28 @@ WILD_WORDS = ["burn", "explode", "betray", "blow up", "jump off", "eat the", "fi
 IMPOSSIBLE = ["teleport", "time travel", "become god", "kill everyone", "instantly win", "end the game", "omnipotent"]
 
 
+def _keyword_tags(low: str) -> list[str]:
+    return [tag for tag, words in KEYWORD_TAGS.items() if any(re.search(rf"\b{re.escape(w)}", low) for w in words)]
+
+
+# Wording the keyword reader can't follow: pretence, negation, conditions and sequences.
+UNCLEAR_WORDS = re.compile(r"\b(pretend|pretending|fake|faking|not|don't|dont|never|instead|unless|if|while|then|but|after|before|until|so that)\b")
+
+
+def is_clear_action(text: str, player_names: dict[str, str], npc_names: dict[str, str]) -> bool:
+    """True when the keyword reader can interpret `text` on its own, so no AI call is needed: one short
+    action with exactly one recognised verb, no tricky wording, and nobody else involved (actions that name
+    another player or an NPC drive cross-player mechanics, so the AI judges those)."""
+    low = text.lower()
+    if not 2 <= len(low.split()) <= 12 or UNCLEAR_WORDS.search(low) or len(_keyword_tags(low)) != 1:
+        return False
+    names = [n for n in player_names.values() if n] + [n.split()[0] for n in npc_names.values() if n]
+    return not any(re.search(rf"\b{re.escape(n.lower())}\b", low) for n in names)
+
+
 def interpret_deterministic(text: str, player_names: dict[str, str], npc_names: dict[str, str], objective_words: list[str]) -> ActionInterpretation:
     low = text.lower()
-    tags: list[str] = []
-    for tag, words in KEYWORD_TAGS.items():
-        if any(re.search(rf"\b{re.escape(w)}", low) for w in words):
-            tags.append(tag)
+    tags = _keyword_tags(low)
     if any(w in low for w in ("loud", "scream", "yell", "bang", "explode", "jazz", "sing")):
         tags.append("noise")
     tags = tags[:4] or ["explore"]
@@ -450,6 +474,8 @@ class ActionInterpreter(BaseService):
     async def interpret(self, text: str, actor_name: str, character_summary: str, situation: str,
                         player_names: dict[str, str], npc_names: dict[str, str], objective_words: list[str]) -> ActionInterpretation:
         base = interpret_deterministic(text, player_names, npc_names, objective_words)
+        if is_clear_action(text, player_names, npc_names):
+            return base
         result = await self._call(
             LLMActionInterpretation, STYLE,
             f"Situation the actor faces: {situation}\nActor: {actor_name} — {character_summary}\n"
@@ -605,8 +631,11 @@ def chapters_from_llm(story: LLMFinalStory) -> list[StoryChapter]:
 
 
 class LLMService:
-    def __init__(self, provider: LLMProvider | None, settings: Settings):
+    """`provider` serves every call made during play; `story_provider` (default: the same) writes the final story."""
+
+    def __init__(self, provider: LLMProvider | None, settings: Settings, story_provider: LLMProvider | None = None):
         self.provider = provider
+        self.story_provider = story_provider or provider
         self.settings = settings
         self.theme_normalizer = ThemeNormalizer(provider, settings)
         self.theme_merger = ThemeMerger(provider, settings)
@@ -619,31 +648,43 @@ class LLMService:
         self.npc_generator = NPCGenerator(provider, settings)
         self.narrative_director = NarrativeDirectorLLM(provider, settings)
         self.story_summarizer = StorySummarizer(provider, settings)
-        self.final_story_generator = FinalStoryGenerator(provider, settings)
-        self.final_story_editor = FinalStoryEditor(provider, settings)
+        self.final_story_generator = FinalStoryGenerator(self.story_provider, settings)
+        self.final_story_editor = FinalStoryEditor(self.story_provider, settings)
 
     @property
     def name(self) -> str:
         return self.provider.name if self.provider else "offline"
 
     async def aclose(self) -> None:
-        if self.provider:
-            await self.provider.aclose()
+        for p in {id(p): p for p in (self.provider, self.story_provider) if p}.values():
+            await p.aclose()
 
 
-def build_provider(settings: Settings) -> LLMProvider | None:
+def build_providers(settings: Settings) -> tuple[LLMProvider | None, LLMProvider | None]:
+    """(round provider, story provider). One shared instance when both tiers use the same model."""
     kind = (settings.llm_provider or "offline").lower()
     if kind == "offline":
-        return None
+        return None, None
     if kind == "anthropic":
-        from .providers.anthropic_provider import AnthropicProvider
+        from .providers.anthropic_provider import DEFAULT_ROUND_MODEL, DEFAULT_STORY_MODEL, AnthropicProvider
 
-        return AnthropicProvider(settings.llm_api_key, settings.llm_model, settings.llm_timeout_seconds)
-    if kind in ("openai", "openai_compatible"):
+        story_model = settings.llm_model or DEFAULT_STORY_MODEL
+        round_model = settings.llm_round_model or settings.llm_model or DEFAULT_ROUND_MODEL
+
+        def make(model: str) -> LLMProvider:
+            return AnthropicProvider(settings.llm_api_key, model, settings.llm_timeout_seconds, settings.llm_effort)
+    elif kind in ("openai", "openai_compatible"):
         from .providers.openai_compatible import OpenAICompatibleProvider
 
-        return OpenAICompatibleProvider(settings.llm_api_key, settings.llm_model, settings.llm_base_url, settings.llm_timeout_seconds)
-    raise ValueError(f"unknown LLM provider {kind!r}")
+        story_model = settings.llm_model
+        round_model = settings.llm_round_model or settings.llm_model
+
+        def make(model: str | None) -> LLMProvider:
+            return OpenAICompatibleProvider(settings.llm_api_key, model, settings.llm_base_url, settings.llm_timeout_seconds)
+    else:
+        raise ValueError(f"unknown LLM provider {kind!r}")
+    story = make(story_model)
+    return (story if round_model == story_model else make(round_model)), story
 
 
 def summarize_any(obj: Any) -> str:  # small helper used in prompts

@@ -8,13 +8,18 @@ from typing import Any
 from ..base import LLMError, LLMProvider
 from ..schema_utils import strict_schema
 
-DEFAULT_MODEL = "claude-opus-5-5"
+# Final story: the most writing per call, read by everyone at the end. In-round calls: many small,
+# latency-sensitive JSON tasks.
+DEFAULT_STORY_MODEL = "claude-sonnet-5-5"
+DEFAULT_ROUND_MODEL = "claude-haiku-5-5"
+# Haiku has no server-side refusal fallback; a fallbacks parameter there is ignored or rejected.
+NO_SERVER_FALLBACK = ("claude-haiku-",)
 
 
 class AnthropicProvider(LLMProvider):
     name = "anthropic"
 
-    def __init__(self, api_key: str | None, model: str | None, timeout: float, effort: str = "medium"):
+    def __init__(self, api_key: str | None, model: str, timeout: float, effort: str = "medium"):
         try:
             import anthropic
         except ImportError as exc:  # pragma: no cover - optional dependency
@@ -22,24 +27,28 @@ class AnthropicProvider(LLMProvider):
         self._anthropic = anthropic
         # api_key=None lets the SDK resolve credentials from its usual sources.
         self._client = anthropic.AsyncAnthropic(api_key=api_key, timeout=timeout, max_retries=2)
-        self.model = model or DEFAULT_MODEL
+        self.model = model
         self.effort = effort
+        # Server-side refusal fallback: reroutes a declined request automatically, where the model has one.
+        self._fallback: dict[str, Any] = {} if model.startswith(NO_SERVER_FALLBACK) else {
+            "extra_headers": {"anthropic-beta": "server-side-fallback-2026-07-01"},
+            "extra_body": {"fallbacks": "default"},
+        }
 
     async def complete_json(self, *, system, user, schema, max_tokens=4000) -> dict[str, Any]:
         a = self._anthropic
         try:
             response = await self._client.messages.create(
                 model=self.model,
-                max_tokens=max(max_tokens, 2000),
+                # Thinking counts toward max_tokens (a cap, not what's billed), so leave room beyond the JSON.
+                max_tokens=max(max_tokens, 8000),
                 system=system,
                 messages=[{"role": "user", "content": user}],
                 output_config={
                     "effort": self.effort,
                     "format": {"type": "json_schema", "schema": strict_schema(schema)},
                 },
-                # Server-side refusal fallback: reroutes a declined request automatically.
-                extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
-                extra_body={"fallbacks": "default"},
+                **self._fallback,
             )
         except a.RateLimitError as exc:
             raise LLMError(f"rate limited: {exc}") from exc
